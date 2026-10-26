@@ -1,0 +1,1022 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Questionário Interativo em Tempo Real</title>
+  
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+  <!-- SEM Socket.IO: usa REST polling a cada 1.5s -->
+
+  <style>
+    body { margin: 0; padding: 0; color: #f1f5f9; font-family: ui-sans-serif, system-ui, sans-serif; overflow-x: hidden; }
+    .glass-panel {
+      background: rgba(15, 23, 42, 0.82);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.7);
+    }
+    .hide-scrollbar::-webkit-scrollbar { display: none; }
+    .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    input:focus, textarea:focus, select:focus { outline: none; box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.5); border-color: #4f46e5; }
+    #app-bg {
+      background-color: #020617;
+      background-size: cover;
+      background-position: center;
+      background-attachment: fixed;
+    }
+    @keyframes pulse-soft {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.65; transform: scale(0.97); }
+    }
+    .live-pulse { animation: pulse-soft 2.2s infinite ease-in-out; }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+  <div id="app-bg" class="fixed inset-0 z-[-2] transition-all duration-1000"></div>
+  <div class="fixed inset-0 z-[-1] bg-slate-950/80 backdrop-blur-sm"></div>
+
+  <!-- Header Fixo -->
+  <header class="glass-panel border-b-0 sticky top-0 z-40 shadow-xl border-b border-white/5">
+    <div class="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="p-2 bg-indigo-600 rounded-lg shadow-[0_0_15px_rgba(79,70,229,0.4)]">
+          <i class="fa-solid fa-graduation-cap text-white text-lg w-5 text-center"></i>
+        </div>
+        <div>
+          <div class="flex items-center space-x-2">
+            <h1 id="headerLessonTitle" class="font-bold text-sm sm:text-lg text-white truncate max-w-[120px] sm:max-w-xs">Simulado Geral</h1>
+            <span id="badgeConnection" class="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-950/60 text-emerald-400 border border-emerald-500/30">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse mr-1"></span> Ao Vivo
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Abas de Navegação -->
+      <nav class="flex space-x-1 sm:space-x-2 bg-slate-950/50 p-1 rounded-xl border border-slate-700/50">
+        <button onclick="switchTab('responder')" id="tabBtn-responder" class="px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all bg-indigo-600 text-white shadow">
+          <i class="fa-solid fa-pen-nib"></i> <span class="hidden sm:inline ml-1">Responder</span>
+        </button>
+        <button onclick="switchTab('perguntas')" id="tabBtn-perguntas" class="px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-xs sm:text-sm font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition-all">
+          <i class="fa-solid fa-lock" id="icon-lock-perguntas"></i> <span class="hidden sm:inline ml-1">Painel</span>
+        </button>
+        <button onclick="switchTab('respostas')" id="tabBtn-respostas" class="px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-xs sm:text-sm font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition-all">
+          <i class="fa-solid fa-lock" id="icon-lock-respostas"></i> <span class="hidden sm:inline ml-1">Dados</span>
+        </button>
+        <button onclick="lockAdminSession()" id="btnLogoutAdmin" class="hidden px-2.5 py-1.5 rounded-lg text-xs font-semibold text-rose-400 hover:bg-rose-950/40 border border-rose-500/30 transition-all" title="Bloquear Painel">
+          <i class="fa-solid fa-arrow-right-from-bracket"></i>
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Notificações Toast -->
+  <div id="toast" class="fixed bottom-4 right-4 z-50 transform translate-y-24 opacity-0 transition-all duration-300 flex items-center space-x-3 bg-slate-800 text-white px-5 py-3 rounded-xl border border-slate-700 shadow-2xl">
+    <i id="toastIcon" class="fa-solid fa-circle-check text-emerald-400 text-lg"></i>
+    <span id="toastMsg" class="text-sm font-medium">Ação concluída!</span>
+  </div>
+
+  <main class="flex-1 max-w-6xl w-full mx-auto p-4 sm:p-6 pb-24">
+
+    <!-- =====================================
+         ABA 1: RESPONDER (Visão do Aluno)
+         ===================================== -->
+    <section id="tab-responder" class="tab-content max-w-2xl mx-auto space-y-6">
+      
+      <!-- Card Identificação -->
+      <div class="glass-panel p-5 sm:p-6 rounded-2xl border border-indigo-500/20 shadow-[0_0_20px_rgba(79,70,229,0.1)]">
+        <h2 class="text-lg font-bold text-white mb-4 flex items-center"><i class="fa-solid fa-user-astronaut text-indigo-400 mr-2"></i> Identificação do Aluno</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-1">Nome</label>
+            <input type="text" id="studentFirstName" placeholder="Ex: João" class="w-full bg-slate-900/80 border border-slate-700 rounded-xl px-4 py-3 text-white transition-colors">
+          </div>
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-1">Sobrenome</label>
+            <input type="text" id="studentLastName" placeholder="Ex: Silva" class="w-full bg-slate-900/80 border border-slate-700 rounded-xl px-4 py-3 text-white transition-colors">
+          </div>
+        </div>
+      </div>
+
+      <!-- Card do Quiz -->
+      <div class="glass-panel p-5 sm:p-8 rounded-2xl relative overflow-hidden">
+        
+        <!-- Estado A: Tela de Espera Inicial -->
+        <div id="noQuestionsNotice" class="hidden text-center py-12 space-y-4">
+          <div class="inline-flex p-4 bg-slate-800/80 text-amber-400 rounded-full border border-slate-700 shadow-inner live-pulse">
+            <i class="fa-solid fa-satellite-dish text-3xl"></i>
+          </div>
+          <h3 class="text-xl font-bold text-white">Aguardando Liberação pelo Professor</h3>
+          <p class="text-slate-400 text-sm max-w-sm mx-auto">Você está conectado na sala ao vivo. Assim que o professor liberar a primeira questão, ela abrirá automaticamente aqui!</p>
+        </div>
+
+        <!-- Estado B: Área de Questão Ativa -->
+        <div id="activeQuizArea" class="space-y-6">
+          <div class="flex items-center justify-between border-b border-slate-800 pb-4">
+            <span class="text-xs font-bold text-indigo-400 uppercase tracking-widest bg-indigo-900/30 px-3 py-1 rounded-full border border-indigo-500/30" id="quizProgressText">0 de 0</span>
+            <div class="w-32 bg-slate-800 h-2 rounded-full overflow-hidden border border-slate-700">
+              <div id="progressBar" class="bg-indigo-500 h-full w-0 transition-all duration-500 shadow-[0_0_8px_rgba(79,70,229,0.6)]"></div>
+            </div>
+          </div>
+          
+          <div class="min-h-[80px] flex items-center">
+            <p id="quizQuestionText" class="text-lg sm:text-2xl font-medium text-white leading-relaxed">...</p>
+          </div>
+          
+          <div class="space-y-3 pt-2" id="optionsContainer"></div>
+          
+          <div class="flex justify-between items-center pt-6 border-t border-slate-800">
+            <button onclick="prevQuestion()" id="prevBtn" class="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-sm font-semibold disabled:opacity-30 disabled:cursor-not-allowed transition-colors border border-slate-700">
+              <i class="fa-solid fa-arrow-left mr-1"></i> Voltar
+            </button>
+            <button onclick="nextQuestion()" id="nextBtn" class="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-bold transition shadow-lg shadow-indigo-500/20 flex items-center">
+              Próxima <i class="fa-solid fa-arrow-right ml-2"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Estado C: MODO DE ESPERA -->
+        <div id="waitingForTeacherArea" class="hidden text-center py-10 space-y-5">
+          <div class="inline-flex p-5 bg-amber-950/40 text-amber-400 rounded-full border border-amber-500/30 shadow-[0_0_25px_rgba(245,158,11,0.2)] live-pulse">
+            <i class="fa-solid fa-hourglass-half text-4xl"></i>
+          </div>
+          <div>
+            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-amber-900/40 text-amber-300 border border-amber-500/30 mb-2">
+              <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse mr-2"></span> Modo de Espera Ativo
+            </span>
+            <h3 class="text-2xl font-bold text-white mt-1">Você respondeu as questões liberadas!</h3>
+            <p class="text-slate-300 text-sm max-w-md mx-auto mt-2 leading-relaxed">
+              Fique nesta tela. O professor ainda pode liberar novas perguntas ou autorizar o envio final da prova a qualquer momento.
+            </p>
+          </div>
+          <div class="pt-4 flex flex-col sm:flex-row justify-center gap-3">
+            <button onclick="reviewAnswers()" class="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-sm font-semibold border border-slate-700 transition">
+              <i class="fa-solid fa-rotate-left mr-2"></i> Revisar Minhas Respostas
+            </button>
+          </div>
+        </div>
+
+        <!-- Estado D: TELA FINAL (liberada pelo professor) -->
+        <div id="quizFinishedArea" class="hidden text-center py-10 space-y-5">
+          <div class="inline-flex p-5 bg-emerald-900/30 text-emerald-400 rounded-full border border-emerald-500/30 shadow-[0_0_30px_rgba(16,185,129,0.25)]">
+            <i class="fa-solid fa-flag-checkered text-4xl"></i>
+          </div>
+          <div>
+            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-emerald-950/60 text-emerald-400 border border-emerald-500/30 mb-2">
+              <i class="fa-solid fa-unlock mr-1.5"></i> Envio Autorizado pelo Professor
+            </span>
+            <h3 class="text-2xl font-bold text-white mt-1">O professor liberou o envio final!</h3>
+            <p class="text-slate-400 text-sm max-w-sm mx-auto mt-2">
+              Verifique se o seu Nome e Sobrenome estão corretos acima e envie suas respostas para registrar sua nota.
+            </p>
+          </div>
+          <div class="pt-2 flex flex-col sm:flex-row justify-center gap-3">
+            <button onclick="reviewAnswers()" class="px-5 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-sm font-semibold border border-slate-700 transition">
+              <i class="fa-solid fa-rotate-left mr-1.5"></i> Revisar Respostas
+            </button>
+            <button onclick="submitAnswers()" id="btnSubmitFinal" class="px-8 py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow-[0_0_15px_rgba(16,185,129,0.3)] transition transform hover:-translate-y-0.5">
+              <i class="fa-solid fa-paper-plane mr-2"></i> Enviar Avaliação
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- =====================================
+         ABA 2: PAINEL ADMINISTRATIVO (Professor)
+         ===================================== -->
+    <section id="tab-perguntas" class="tab-content hidden space-y-6">
+      
+      <!-- CONTROLE MESTRE -->
+      <div id="submissionControlCard" class="glass-panel p-6 rounded-2xl border-2 transition-all">
+        <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div class="space-y-1">
+            <div class="flex items-center space-x-2">
+              <span id="subStatusDot" class="w-3 h-3 rounded-full bg-amber-400 animate-pulse"></span>
+              <h2 id="subStatusTitle" class="text-base font-bold text-white uppercase tracking-wider">Modo de Espera Ativo (Envios Bloqueados)</h2>
+            </div>
+            <p id="subStatusDesc" class="text-xs text-slate-300 max-w-xl leading-relaxed">
+              Os alunos respondem as perguntas liberadas e ficam em tela de espera aguardando novas questões. Ninguém pode enviar antes da sua autorização.
+            </p>
+          </div>
+          <button onclick="toggleSubmissionState()" id="btnToggleSubmission" class="w-full md:w-auto px-6 py-3 rounded-xl text-sm font-bold shadow-lg transition flex items-center justify-center shrink-0">
+            <!-- Renderizado via JS -->
+          </button>
+        </div>
+      </div>
+
+      <!-- Configurações Rápidas -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="glass-panel p-5 rounded-2xl space-y-3">
+          <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider"><i class="fa-solid fa-chalkboard-user mr-1 text-indigo-400"></i> Título da Aula</label>
+          <div class="flex space-x-2">
+            <input type="text" id="lessonTitleInput" class="w-full bg-slate-900/80 border border-slate-700 rounded-xl px-4 py-2 text-white text-sm">
+            <button onclick="saveSettings('title')" class="bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded-xl text-white font-bold text-sm transition shrink-0"><i class="fa-solid fa-save"></i></button>
+          </div>
+        </div>
+        <div class="glass-panel p-5 rounded-2xl space-y-3">
+          <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider"><i class="fa-solid fa-key mr-1 text-amber-400"></i> Alterar Senha do Painel</label>
+          <div class="flex space-x-2">
+            <input type="password" id="newAdminPassword" placeholder="Nova senha mestra..." class="w-full bg-slate-900/80 border border-slate-700 rounded-xl px-4 py-2 text-white text-sm">
+            <button onclick="changeAdminPassword()" class="bg-amber-600 hover:bg-amber-500 border border-amber-500 px-4 py-2 rounded-xl text-white font-bold text-sm transition shrink-0"><i class="fa-solid fa-save"></i></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Imagem de Fundo -->
+      <div class="glass-panel p-5 rounded-2xl space-y-3 border-l-4 border-l-pink-500">
+        <label class="block text-xs font-bold text-slate-300 uppercase tracking-wider"><i class="fa-brands fa-google-drive mr-1 text-pink-400"></i> Imagem de Fundo (Link direto ou Google Drive)</label>
+        <div class="flex space-x-2">
+          <input type="text" id="driveBgUrl" placeholder="https://drive.google.com/file/d/.../view ou URL direta" class="w-full bg-slate-900/80 border border-slate-700 rounded-xl px-4 py-2 text-white text-xs sm:text-sm">
+          <button onclick="saveSettings('background')" class="bg-pink-600 hover:bg-pink-500 px-4 py-2 rounded-xl text-white font-bold text-sm transition shrink-0">Aplicar</button>
+        </div>
+      </div>
+
+      <!-- BANCO DE PERGUNTAS -->
+      <div class="glass-panel p-5 sm:p-6 rounded-2xl space-y-6">
+        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-700 pb-5">
+          <div>
+            <div class="flex items-center space-x-2">
+              <h2 class="text-xl font-bold text-white">Banco de Questões</h2>
+              <span class="text-xs bg-emerald-950/60 text-emerald-400 px-2.5 py-0.5 rounded-full border border-emerald-500/30">Ao Vivo</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">Ao clicar em "Liberar", a questão abre instantaneamente na tela dos alunos em modo de espera.</p>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <button onclick="setAllQuestionsStatus(true)" class="px-3 py-2 bg-indigo-900/30 text-indigo-300 border border-indigo-700/50 rounded-lg text-xs font-bold hover:bg-indigo-800/40 transition">
+              <i class="fa-solid fa-eye mr-1"></i> Liberar Todas
+            </button>
+            <button onclick="setAllQuestionsStatus(false)" class="px-3 py-2 bg-slate-800 text-slate-400 border border-slate-700 rounded-lg text-xs font-bold hover:bg-slate-700 transition">
+              <i class="fa-solid fa-eye-slash mr-1"></i> Ocultar Todas
+            </button>
+            <button onclick="openQuestionModal()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold shadow-lg transition">
+              <i class="fa-solid fa-plus mr-1"></i> Nova Questão
+            </button>
+          </div>
+        </div>
+
+        <div id="questionsList" class="space-y-4"></div>
+      </div>
+    </section>
+
+    <!-- =====================================
+         ABA 3: DADOS / RESULTADOS (Professor)
+         ===================================== -->
+    <section id="tab-respostas" class="tab-content hidden space-y-6">
+      <div class="glass-panel p-5 sm:p-6 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h2 class="text-lg font-bold text-white flex items-center space-x-2">
+            <div class="p-2 bg-emerald-900/50 rounded-lg border border-emerald-500/30"><i class="fa-solid fa-square-poll-vertical text-emerald-400"></i></div>
+            <span>Respostas Recebidas em Tempo Real</span>
+          </h2>
+          <p class="text-xs text-slate-400 mt-1">Conforme os alunos enviam, a linha aparece aqui instantaneamente.</p>
+        </div>
+        <div class="space-x-2 flex w-full sm:w-auto">
+          <button onclick="clearResponses()" class="flex-1 sm:flex-none px-4 py-2.5 bg-rose-900/30 hover:bg-rose-900/50 text-rose-400 border border-rose-700/50 rounded-xl text-xs font-bold transition flex items-center justify-center">
+            <i class="fa-solid fa-trash-can mr-2"></i> Limpar Tudo
+          </button>
+          <button onclick="exportCSV()" class="flex-1 sm:flex-none px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-lg transition flex items-center justify-center">
+            <i class="fa-solid fa-download mr-2"></i> Baixar CSV
+          </button>
+        </div>
+      </div>
+
+      <div class="glass-panel rounded-2xl overflow-x-auto shadow-2xl border border-slate-700">
+        <table class="w-full text-left text-sm whitespace-nowrap">
+          <thead class="bg-slate-900/90 text-[10px] sm:text-xs uppercase text-slate-400 border-b border-slate-700 tracking-wider">
+            <tr id="tableHeader"></tr>
+          </thead>
+          <tbody id="tableBody" class="divide-y divide-slate-800/80 text-slate-300 bg-slate-900/30"></tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Modal de Autenticação -->
+  <div id="authModal" class="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-md hidden flex items-center justify-center p-4 transition-opacity">
+    <div class="bg-slate-900 border border-slate-700 max-w-sm w-full rounded-3xl p-8 shadow-2xl text-center">
+      <div class="mx-auto w-16 h-16 bg-indigo-900/30 text-indigo-400 rounded-full flex items-center justify-center mb-4 text-2xl border border-indigo-500/20">
+        <i class="fa-solid fa-lock"></i>
+      </div>
+      <h3 class="text-xl font-bold text-white mb-2">Painel do Professor</h3>
+      <p class="text-sm text-slate-400 mb-6">Insira a senha de acesso para gerenciar o simulado.</p>
+      <input type="password" id="adminPasswordInput" placeholder="••••••••" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-white text-center text-xl tracking-widest mb-6 focus:border-indigo-500 transition-colors">
+      <div class="flex justify-between space-x-3">
+        <button onclick="cancelAuth()" class="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-sm font-bold transition border border-slate-700">Voltar</button>
+        <button onclick="verifyPassword()" class="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-bold shadow-lg transition">Desbloquear</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Pergunta (Nova / Editar) -->
+  <div id="questionModal" class="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 max-w-lg w-full rounded-3xl p-6 shadow-2xl">
+      <div class="flex justify-between items-center mb-5 border-b border-slate-800 pb-3">
+        <h3 id="modalTitle" class="text-lg font-bold text-white">Nova Pergunta</h3>
+        <button onclick="closeQuestionModal()" class="text-slate-500 hover:text-white transition w-8 h-8 rounded-lg flex items-center justify-center bg-slate-800"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="space-y-4">
+        <div>
+          <label class="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Enunciado</label>
+          <textarea id="modalQuestionText" placeholder="Ex: Quanto é 5 x 5?" rows="3" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-white text-sm transition-colors resize-none"></textarea>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+          <div><label class="block text-[10px] font-bold text-indigo-400 mb-1">Alternativa A</label><input type="text" id="modalOptA" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white transition-colors"></div>
+          <div><label class="block text-[10px] font-bold text-indigo-400 mb-1">Alternativa B</label><input type="text" id="modalOptB" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white transition-colors"></div>
+          <div><label class="block text-[10px] font-bold text-indigo-400 mb-1">Alternativa C</label><input type="text" id="modalOptC" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white transition-colors"></div>
+          <div><label class="block text-[10px] font-bold text-indigo-400 mb-1">Alternativa D</label><input type="text" id="modalOptD" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white transition-colors"></div>
+        </div>
+        <div class="pt-2">
+          <label class="block text-[11px] font-bold text-emerald-400 uppercase tracking-wider mb-2"><i class="fa-solid fa-bullseye mr-1"></i> Gabarito (Opção Correta)</label>
+          <select id="modalCorrectOption" class="w-full bg-slate-950 border border-emerald-500/50 text-white text-sm rounded-xl px-3 py-2.5 cursor-pointer hover:border-emerald-500 transition-colors appearance-none">
+            <option value="A">Alternativa A</option>
+            <option value="B">Alternativa B</option>
+            <option value="C">Alternativa C</option>
+            <option value="D">Alternativa D</option>
+          </select>
+        </div>
+      </div>
+      <div class="flex justify-end space-x-3 mt-6 pt-4 border-t border-slate-800">
+        <button onclick="closeQuestionModal()" class="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-sm font-semibold transition">Cancelar</button>
+        <button onclick="saveQuestion()" class="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-bold shadow-lg transition"><i class="fa-solid fa-check mr-2"></i> Salvar e Transmitir</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       LÓGICA REST POLLING (sem Socket.IO)
+       ========================================================================= -->
+  <script>
+    // ==========================================
+    // ESTADO GLOBAL
+    // ==========================================
+    let isAdminAuthenticated = sessionStorage.getItem('admin_auth_v1') === 'true';
+    let pendingTab = null;
+
+    let lessonTitle = "Simulado Geral";
+    let backgroundDriveUrl = "";
+    let allowSubmission = false;
+
+    let questions = [];
+    let responses = [];
+
+    let activeIndex = 0;
+    let selectedAnswers = {};
+    let editId = null;
+    let lastVisibleQuestionCount = -1;
+    let isStudentInWaitingRoom = false;
+
+    // ==========================================
+    // INICIALIZAÇÃO
+    // ==========================================
+    document.addEventListener("DOMContentLoaded", () => {
+      updateAdminAuthUI();
+      document.getElementById('adminPasswordInput').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') verifyPassword();
+      });
+      // Primeiro carregamento imediato
+      fetchData(true);
+      // Polling a cada 1.5 segundos
+      setInterval(() => fetchData(false), 1500);
+    });
+
+    // ==========================================
+    // REST POLLING
+    // ==========================================
+    async function apiPost(path, body) {
+      const res = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      return res.json();
+    }
+
+    async function fetchData(isInit = false) {
+      try {
+        const res = await fetch('/api/data');
+        if (!res.ok) throw new Error('Resposta inválida');
+        const data = await res.json();
+        updateStatusBadge(true);
+        processDataUpdate(data, isInit);
+      } catch(e) {
+        updateStatusBadge(false);
+      }
+    }
+
+    function processDataUpdate(data, isInit) {
+      // --- Configurações ---
+      if (data.settings) {
+        const wasAllowed = allowSubmission;
+        applySettingsData(data.settings);
+
+        if (!isInit) {
+          if (!wasAllowed && allowSubmission) {
+            toast("🎉 O professor autorizou o envio final das respostas!");
+            renderQuizArea();
+          } else if (wasAllowed && !allowSubmission) {
+            toast("🔒 O envio foi pausado pelo professor.");
+            renderQuizArea();
+          }
+        }
+      }
+
+      // --- Questões ---
+      if (data.questions) {
+        const currentVisibles = data.questions.filter(q => q.visible).length;
+
+        if (!isInit && lastVisibleQuestionCount !== -1 && currentVisibles > lastVisibleQuestionCount) {
+          toast("📢 Nova pergunta liberada pelo professor!");
+          if (isStudentInWaitingRoom) {
+            isStudentInWaitingRoom = false;
+            activeIndex = lastVisibleQuestionCount;
+          }
+        }
+        lastVisibleQuestionCount = currentVisibles;
+        questions = data.questions;
+        renderQuestionsList();
+        renderQuizArea();
+      }
+
+      // --- Respostas ---
+      if (data.responses !== undefined) {
+        const prevCount = responses.length;
+        responses = data.responses;
+
+        if (!isInit) {
+          if (responses.length > prevCount) {
+            const last = responses[responses.length - 1];
+            toast(`📝 Resposta recebida de ${last.nome} (${last.acertos})`);
+            renderQuestionsList();
+          } else if (responses.length < prevCount) {
+            toast("Base de respostas limpa.");
+            renderQuestionsList();
+          }
+        }
+        renderResponsesTable();
+      }
+    }
+
+    // ==========================================
+    // AÇÕES DO PROFESSOR (REST)
+    // ==========================================
+    async function toggleQ(id) {
+      try {
+        const data = await (await fetch('/api/data')).json();
+        data.questions = data.questions.map(q => q.id === id ? { ...q, visible: !q.visible } : q);
+        await apiPost('/api/save-questions', { questions: data.questions });
+        fetchData(false);
+      } catch(e) { toast('Erro ao alterar questão!', true); }
+    }
+
+    async function setAllQuestionsStatus(status) {
+      try {
+        const data = await (await fetch('/api/data')).json();
+        data.questions = data.questions.map(q => ({ ...q, visible: status }));
+        await apiPost('/api/save-questions', { questions: data.questions });
+        fetchData(false);
+      } catch(e) { toast('Erro!', true); }
+    }
+
+    async function deleteQ(id) {
+      if (!confirm('Apagar esta questão para todos?')) return;
+      try {
+        const data = await (await fetch('/api/data')).json();
+        data.questions = data.questions.filter(q => q.id !== id);
+        await apiPost('/api/save-questions', { questions: data.questions });
+        fetchData(false);
+      } catch(e) { toast('Erro ao deletar!', true); }
+    }
+
+    async function saveQuestion() {
+      let title = document.getElementById('modalQuestionText').value.trim();
+      let opts = {
+        A: document.getElementById('modalOptA').value.trim(),
+        B: document.getElementById('modalOptB').value.trim(),
+        C: document.getElementById('modalOptC').value.trim(),
+        D: document.getElementById('modalOptD').value.trim()
+      };
+      let correct = document.getElementById('modalCorrectOption').value;
+      if (!title || !opts.A || !opts.B || !opts.C || !opts.D) return toast('Preencha todos os campos!', true);
+
+      try {
+        const data = await (await fetch('/api/data')).json();
+        if (editId) {
+          data.questions = data.questions.map(q =>
+            q.id === editId ? { ...q, title, options: opts, correct } : q
+          );
+        } else {
+          data.questions.push({ id: Date.now(), title, options: opts, correct, visible: true });
+        }
+        await apiPost('/api/save-questions', { questions: data.questions });
+        closeQuestionModal();
+        fetchData(false);
+      } catch(e) { toast('Erro ao salvar questão!', true); }
+    }
+
+    async function toggleSubmissionState() {
+      try {
+        await apiPost('/api/toggle-submission', { allowSubmission: !allowSubmission });
+        fetchData(false);
+      } catch(e) { toast('Erro!', true); }
+    }
+
+    async function saveSettings(type) {
+      try {
+        if (type === 'title') {
+          const val = document.getElementById('lessonTitleInput').value.trim() || 'Aula Interativa';
+          await apiPost('/api/save-settings', { lessonTitle: val });
+          toast('Título salvo!');
+        } else if (type === 'background') {
+          const val = document.getElementById('driveBgUrl').value.trim();
+          await apiPost('/api/save-settings', { backgroundUrl: val });
+          applyBackground(val);
+          toast('Fundo aplicado!');
+        }
+      } catch(e) { toast('Erro ao salvar!', true); }
+    }
+
+    async function clearResponses() {
+      if (!confirm('Apagar todas as respostas salvas?')) return;
+      try {
+        await apiPost('/api/clear-responses', {});
+        fetchData(false);
+      } catch(e) { toast('Erro ao limpar!', true); }
+    }
+
+    async function submitAnswers() {
+      if (!allowSubmission) return toast('O professor ainda não autorizou o envio final!', true);
+
+      let fname = document.getElementById('studentFirstName').value.trim();
+      let lname = document.getElementById('studentLastName').value.trim();
+      if (!fname || !lname) {
+        toast('Por favor, preencha seu Nome e Sobrenome no topo!', true);
+        document.getElementById('studentFirstName').focus();
+        return;
+      }
+
+      const btnSubmit = document.getElementById('btnSubmitFinal');
+      btnSubmit.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin mr-2"></i> Enviando...`;
+      btnSubmit.disabled = true;
+
+      let vQs = questions.filter(q => q.visible);
+      let score = 0;
+      let ansLog = {};
+      vQs.forEach(q => {
+        const studentAns = selectedAnswers[q.id] || '-';
+        ansLog[q.id] = studentAns;
+        if (studentAns === q.correct) score++;
+      });
+
+      try {
+        const result = await apiPost('/api/submit-response', {
+          date: new Date().toLocaleString('pt-BR'),
+          nome: fname,
+          sobrenome: lname,
+          acertos: `${score}/${vQs.length}`,
+          respostas: ansLog
+        });
+
+        if (result.result === 'success') {
+          toast("Avaliação enviada com sucesso!");
+          selectedAnswers = {};
+          activeIndex = 0;
+          isStudentInWaitingRoom = false;
+          document.getElementById('studentFirstName').value = '';
+          document.getElementById('studentLastName').value = '';
+          btnSubmit.innerHTML = `<i class="fa-solid fa-paper-plane mr-2"></i> Enviar Avaliação`;
+          btnSubmit.disabled = false;
+          document.getElementById('quizFinishedArea').classList.add('hidden');
+          renderQuizArea();
+          window.scrollTo(0, 0);
+        } else {
+          toast(result.message || "Erro ao enviar respostas!", true);
+          btnSubmit.innerHTML = `<i class="fa-solid fa-paper-plane mr-2"></i> Enviar Avaliação`;
+          btnSubmit.disabled = false;
+        }
+      } catch(e) {
+        toast("Erro de conexão ao enviar!", true);
+        btnSubmit.innerHTML = `<i class="fa-solid fa-paper-plane mr-2"></i> Enviar Avaliação`;
+        btnSubmit.disabled = false;
+      }
+    }
+
+    // ==========================================
+    // AUTENTICAÇÃO (compara com quiz-data.json)
+    // ==========================================
+    async function verifyPassword() {
+      const input = document.getElementById('adminPasswordInput').value;
+      if (!input) return toast('Digite a senha!', true);
+      try {
+        const data = await (await fetch('/api/data')).json();
+        const storedPwd = (data.settings && data.settings.adminPassword) || 'prof123';
+        if (input === storedPwd) {
+          isAdminAuthenticated = true;
+          sessionStorage.setItem('admin_auth_v1', 'true');
+          document.getElementById('authModal').classList.add('hidden');
+          document.getElementById('adminPasswordInput').value = '';
+          updateAdminAuthUI();
+          toast('Painel desbloqueado com sucesso!');
+          if (pendingTab) forceSwitchTab(pendingTab);
+          pendingTab = null;
+        } else {
+          toast('Senha incorreta!', true);
+          document.getElementById('adminPasswordInput').value = '';
+          document.getElementById('adminPasswordInput').focus();
+        }
+      } catch(e) { toast('Erro ao verificar senha!', true); }
+    }
+
+    async function changeAdminPassword() {
+      const newPwd = document.getElementById('newAdminPassword').value.trim();
+      if (!newPwd) return toast('Digite uma nova senha válida!', true);
+      try {
+        await apiPost('/api/save-settings', { adminPassword: newPwd });
+        document.getElementById('newAdminPassword').value = '';
+        toast('Senha do painel alterada com sucesso!');
+      } catch(e) { toast('Erro ao alterar senha!', true); }
+    }
+
+    function cancelAuth() {
+      document.getElementById('authModal').classList.add('hidden');
+      document.getElementById('adminPasswordInput').value = '';
+      pendingTab = null;
+    }
+
+    function lockAdminSession() {
+      isAdminAuthenticated = false;
+      sessionStorage.removeItem('admin_auth_v1');
+      updateAdminAuthUI();
+      forceSwitchTab('responder');
+      toast('Painel bloqueado.');
+    }
+
+    // ==========================================
+    // UI — ABAS E AUTH
+    // ==========================================
+    function updateAdminAuthUI() {
+      const lockPerguntas = document.getElementById('icon-lock-perguntas');
+      const lockRespostas = document.getElementById('icon-lock-respostas');
+      const btnLogout = document.getElementById('btnLogoutAdmin');
+      if (isAdminAuthenticated) {
+        lockPerguntas.className = 'fa-solid fa-gear text-indigo-400';
+        lockRespostas.className = 'fa-solid fa-table text-emerald-400';
+        btnLogout.classList.remove('hidden');
+      } else {
+        lockPerguntas.className = 'fa-solid fa-lock text-slate-400';
+        lockRespostas.className = 'fa-solid fa-lock text-slate-400';
+        btnLogout.classList.add('hidden');
+      }
+    }
+
+    function switchTab(tab) {
+      if ((tab === 'perguntas' || tab === 'respostas') && !isAdminAuthenticated) {
+        pendingTab = tab;
+        document.getElementById('authModal').classList.remove('hidden');
+        setTimeout(() => document.getElementById('adminPasswordInput').focus(), 100);
+        return;
+      }
+      forceSwitchTab(tab);
+    }
+
+    function forceSwitchTab(tab) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+      document.querySelectorAll('nav button').forEach(btn => {
+        if (btn.id !== 'btnLogoutAdmin') {
+          btn.classList.remove('bg-indigo-600', 'text-white', 'shadow');
+          btn.classList.add('text-slate-400', 'hover:bg-slate-800');
+        }
+      });
+      document.getElementById(`tab-${tab}`).classList.remove('hidden');
+      const activeBtn = document.getElementById(`tabBtn-${tab}`);
+      if (activeBtn) {
+        activeBtn.classList.add('bg-indigo-600', 'text-white', 'shadow');
+        activeBtn.classList.remove('text-slate-400', 'hover:bg-slate-800');
+      }
+      if (tab === 'responder') renderQuizArea();
+      if (tab === 'respostas') renderResponsesTable();
+    }
+
+    // ==========================================
+    // SETTINGS
+    // ==========================================
+    function applySettingsData(settings) {
+      if (settings.lessonTitle) {
+        lessonTitle = settings.lessonTitle;
+        document.getElementById('headerLessonTitle').innerText = lessonTitle;
+        document.getElementById('lessonTitleInput').value = lessonTitle;
+      }
+      if (settings.backgroundUrl !== undefined) {
+        backgroundDriveUrl = settings.backgroundUrl;
+        document.getElementById('driveBgUrl').value = backgroundDriveUrl;
+        applyBackground(backgroundDriveUrl);
+      }
+      if (settings.allowSubmission !== undefined) {
+        allowSubmission = settings.allowSubmission;
+        renderSubmissionControls();
+      }
+    }
+
+    // ==========================================
+    // CONTROLE DE ENVIO (PROFESSOR)
+    // ==========================================
+    function renderSubmissionControls() {
+      const card = document.getElementById('submissionControlCard');
+      const dot = document.getElementById('subStatusDot');
+      const title = document.getElementById('subStatusTitle');
+      const desc = document.getElementById('subStatusDesc');
+      const btn = document.getElementById('btnToggleSubmission');
+      if (!card || !btn) return;
+
+      if (allowSubmission) {
+        card.className = "glass-panel p-6 rounded-2xl border-2 border-emerald-500/50 bg-emerald-950/20";
+        dot.className = "w-3 h-3 rounded-full bg-emerald-400 animate-pulse";
+        title.innerText = "Envios Liberados (Alunos Podem Enviar)";
+        title.className = "text-base font-bold text-emerald-300 uppercase tracking-wider";
+        desc.innerText = "Os alunos já conseguem ver o botão de envio final da prova e submeter as notas para o seu painel.";
+        btn.className = "w-full md:w-auto px-6 py-3 rounded-xl text-sm font-bold bg-amber-600 hover:bg-amber-500 text-white shadow-lg transition flex items-center justify-center shrink-0";
+        btn.innerHTML = `<i class="fa-solid fa-lock mr-2"></i> Bloquear Envios (Voltar para Espera)`;
+      } else {
+        card.className = "glass-panel p-6 rounded-2xl border-2 border-indigo-500/30 bg-slate-900/60";
+        dot.className = "w-3 h-3 rounded-full bg-amber-400 animate-pulse";
+        title.innerText = "Modo de Espera Ativo (Envios Bloqueados)";
+        title.className = "text-base font-bold text-amber-300 uppercase tracking-wider";
+        desc.innerText = "Os alunos respondem as perguntas liberadas e ficam em tela de espera aguardando novas questões. Ninguém pode enviar o formulário ainda.";
+        btn.className = "w-full md:w-auto px-6 py-3 rounded-xl text-sm font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg transition flex items-center justify-center shrink-0";
+        btn.innerHTML = `<i class="fa-solid fa-unlock mr-2"></i> Liberar Envio Final para os Alunos`;
+      }
+    }
+
+    // ==========================================
+    // FLUXO DO ALUNO
+    // ==========================================
+    function renderQuizArea() {
+      let vQs = questions.filter(q => q.visible);
+      const noQs = document.getElementById('noQuestionsNotice');
+      const activeArea = document.getElementById('activeQuizArea');
+      const waitingArea = document.getElementById('waitingForTeacherArea');
+      const finishedArea = document.getElementById('quizFinishedArea');
+
+      if (vQs.length === 0) {
+        noQs.classList.remove('hidden');
+        activeArea.classList.add('hidden');
+        waitingArea.classList.add('hidden');
+        finishedArea.classList.add('hidden');
+        return;
+      }
+      noQs.classList.add('hidden');
+
+      if (isStudentInWaitingRoom) {
+        activeArea.classList.add('hidden');
+        if (allowSubmission) {
+          waitingArea.classList.add('hidden');
+          finishedArea.classList.remove('hidden');
+        } else {
+          finishedArea.classList.add('hidden');
+          waitingArea.classList.remove('hidden');
+        }
+        return;
+      }
+
+      waitingArea.classList.add('hidden');
+      finishedArea.classList.add('hidden');
+      activeArea.classList.remove('hidden');
+
+      if (activeIndex >= vQs.length) activeIndex = Math.max(0, vQs.length - 1);
+      let q = vQs[activeIndex];
+
+      document.getElementById('quizProgressText').innerText = `Questão ${activeIndex + 1} de ${vQs.length}`;
+      document.getElementById('progressBar').style.width = `${((activeIndex + 1) / vQs.length) * 100}%`;
+      document.getElementById('quizQuestionText').innerText = q.title;
+
+      let optsHtml = '';
+      ['A','B','C','D'].forEach(l => {
+        let sel = selectedAnswers[q.id] === l;
+        optsHtml += `
+          <button onclick="selOpt(${q.id}, '${l}')" class="w-full text-left p-4 rounded-xl border-2 flex items-center space-x-4 transition-all transform hover:-translate-y-0.5 ${sel ? 'bg-indigo-600/30 border-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.2)]' : 'bg-slate-900 border-slate-700 hover:border-slate-500'}">
+            <span class="w-8 h-8 shrink-0 rounded-lg flex items-center justify-center text-sm font-bold ${sel ? 'bg-indigo-500 text-white shadow-lg' : 'bg-slate-800 text-slate-400'}">${l}</span>
+            <span class="text-[15px] ${sel ? 'text-white font-bold' : 'text-slate-300'}">${q.options[l]}</span>
+          </button>
+        `;
+      });
+      document.getElementById('optionsContainer').innerHTML = optsHtml;
+      document.getElementById('prevBtn').disabled = activeIndex === 0;
+
+      const nextBtn = document.getElementById('nextBtn');
+      if (activeIndex === vQs.length - 1) {
+        if (allowSubmission) {
+          nextBtn.innerHTML = `Concluir e Enviar <i class="fa-solid fa-paper-plane ml-2"></i>`;
+          nextBtn.className = "px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-sm font-bold transition shadow-lg flex items-center shadow-emerald-500/30";
+        } else {
+          nextBtn.innerHTML = `Avançar (Aguardar) <i class="fa-solid fa-hourglass-half ml-2"></i>`;
+          nextBtn.className = "px-6 py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-sm font-bold transition shadow-lg flex items-center shadow-amber-500/30";
+        }
+      } else {
+        nextBtn.innerHTML = `Próxima <i class="fa-solid fa-arrow-right ml-2"></i>`;
+        nextBtn.className = "px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-bold transition shadow-lg flex items-center shadow-indigo-500/30";
+      }
+    }
+
+    function selOpt(qid, l) { selectedAnswers[qid] = l; renderQuizArea(); }
+
+    function prevQuestion() {
+      if (activeIndex > 0) { activeIndex--; isStudentInWaitingRoom = false; renderQuizArea(); }
+    }
+
+    function nextQuestion() {
+      let vQs = questions.filter(q => q.visible);
+      let currentQ = vQs[activeIndex];
+      if (!selectedAnswers[currentQ.id]) return toast('Selecione uma alternativa antes de avançar!', true);
+      if (activeIndex < vQs.length - 1) { activeIndex++; renderQuizArea(); }
+      else { isStudentInWaitingRoom = true; renderQuizArea(); }
+    }
+
+    function reviewAnswers() { isStudentInWaitingRoom = false; activeIndex = 0; renderQuizArea(); }
+
+    // ==========================================
+    // BANCO DE PERGUNTAS (PROFESSOR)
+    // ==========================================
+    function countResponsesPerQuestion() {
+      const counts = {};
+      responses.forEach(r => {
+        Object.keys(r.respostas || {}).forEach(qid => {
+          counts[String(qid)] = (counts[String(qid)] || 0) + 1;
+        });
+      });
+      return counts;
+    }
+
+    function renderQuestionsList() {
+      const list = document.getElementById('questionsList');
+      if (!list) return;
+      list.innerHTML = '';
+      if (questions.length === 0) {
+        list.innerHTML = '<div class="text-center py-8 text-slate-500 border border-dashed border-slate-700 rounded-xl">Sem questões cadastradas.</div>';
+        return;
+      }
+      const counts = countResponsesPerQuestion();
+      questions.forEach((q, i) => {
+        const isVis = q.visible;
+        const respCount = counts[String(q.id)] || 0;
+        const renderOption = (letter, text) => {
+          const isCorrect = q.correct === letter;
+          return `<div class="bg-slate-950/50 p-2 rounded border ${isCorrect ? 'border-emerald-500/50 bg-emerald-900/20 text-emerald-300' : 'border-slate-700/50 text-slate-300'}">
+                    <strong class="${isCorrect ? 'text-emerald-400' : 'text-indigo-400'} mr-1">${letter}:</strong> ${text}
+                    ${isCorrect ? '<i class="fa-solid fa-check text-[10px] ml-1"></i>' : ''}
+                  </div>`;
+        };
+        list.innerHTML += `
+          <div class="p-5 rounded-2xl border transition-all ${isVis ? 'bg-slate-800/80 border-indigo-500/30' : 'bg-slate-900 border-slate-800 opacity-70'}">
+            <div class="flex flex-col md:flex-row justify-between items-start gap-4">
+              <div class="space-y-2 flex-1 w-full">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="text-[10px] font-bold px-2 py-0.5 rounded tracking-wider ${isVis ? 'bg-indigo-900/60 text-indigo-300 border border-indigo-500/30' : 'bg-slate-800 text-slate-500 border border-slate-600'}">
+                    ${isVis ? '🟢 LIBERADA (Ao Vivo)' : '🔴 BLOQUEADA (Oculta)'}
+                  </span>
+                  <span class="text-xs font-bold text-slate-500">QUESTÃO ${i+1}</span>
+                  <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold flex items-center gap-1.5 ${respCount > 0 ? 'bg-violet-900/40 text-violet-300 border border-violet-500/30' : 'bg-slate-800/60 text-slate-500 border border-slate-700'}">
+                    <i class="fa-solid fa-users text-[10px]"></i>
+                    ${respCount} resposta${respCount !== 1 ? 's' : ''}
+                  </span>
+                </div>
+                <h3 class="font-bold text-white text-base leading-snug">${q.title}</h3>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3 text-xs">
+                  ${renderOption('A', q.options.A)} ${renderOption('B', q.options.B)}
+                  ${renderOption('C', q.options.C)} ${renderOption('D', q.options.D)}
+                </div>
+              </div>
+              <div class="flex flex-row md:flex-col items-center gap-2 shrink-0 w-full md:w-auto mt-2 md:mt-0 pt-3 md:pt-0 border-t md:border-t-0 border-slate-700">
+                <button onclick="toggleQ(${q.id})" class="flex-1 md:w-full px-3 py-2 bg-slate-950 hover:bg-slate-700 rounded-lg text-xs font-bold text-white border border-slate-700 transition flex items-center justify-center">
+                  ${isVis ? '<i class="fa-solid fa-eye-slash mr-1 text-amber-400"></i> Ocultar' : '<i class="fa-solid fa-eye mr-1 text-emerald-400"></i> Liberar'}
+                </button>
+                <button onclick="openQuestionModal(${q.id})" class="flex-1 md:w-full px-3 py-2 bg-indigo-900/30 hover:bg-indigo-900/50 text-indigo-300 border border-indigo-700/50 rounded-lg text-xs font-bold transition flex items-center justify-center"><i class="fa-solid fa-pen mr-1"></i> Editar</button>
+                <button onclick="deleteQ(${q.id})" class="w-10 md:w-full py-2 bg-rose-900/30 hover:bg-rose-900/50 text-rose-400 border border-rose-700/50 rounded-lg text-xs transition flex items-center justify-center"><i class="fa-solid fa-trash-can"></i></button>
+              </div>
+            </div>
+          </div>
+        `;
+      });
+    }
+
+    function openQuestionModal(id = null) {
+      editId = id;
+      document.getElementById('questionModal').classList.remove('hidden');
+      if (id) {
+        let q = questions.find(x => x.id === id);
+        document.getElementById('modalTitle').innerText = 'Editar Questão';
+        document.getElementById('modalQuestionText').value = q.title;
+        document.getElementById('modalOptA').value = q.options.A;
+        document.getElementById('modalOptB').value = q.options.B;
+        document.getElementById('modalOptC').value = q.options.C;
+        document.getElementById('modalOptD').value = q.options.D;
+        document.getElementById('modalCorrectOption').value = q.correct || 'A';
+      } else {
+        document.getElementById('modalTitle').innerText = 'Nova Questão';
+        document.querySelectorAll('#questionModal input[type="text"], #questionModal textarea').forEach(i => i.value = '');
+        document.getElementById('modalCorrectOption').value = 'A';
+      }
+    }
+
+    function closeQuestionModal() { document.getElementById('questionModal').classList.add('hidden'); }
+
+    // ==========================================
+    // TABELA DE RESULTADOS
+    // ==========================================
+    function renderResponsesTable() {
+      let head = document.getElementById('tableHeader');
+      let body = document.getElementById('tableBody');
+      if (!head || !body) return;
+
+      let theadHtml = `
+        <th class="p-3 text-left w-32 border-r border-slate-700">Data</th>
+        <th class="p-3 text-left border-r border-slate-700">Nome</th>
+        <th class="p-3 text-left border-r border-slate-700">Sobrenome</th>
+        <th class="p-3 text-center border-r border-slate-700 text-emerald-400"><i class="fa-solid fa-bullseye"></i> Acertos</th>
+      `;
+      questions.forEach((q,i) => theadHtml += `<th class="p-3 text-center" title="Correta: ${q.correct || '?'}">Q${i+1}</th>`);
+      head.innerHTML = theadHtml;
+      body.innerHTML = '';
+      if (responses.length === 0) {
+        body.innerHTML = `<tr><td colspan="${questions.length+4}" class="p-8 text-center text-slate-500 italic">Nenhuma resposta registrada ainda.</td></tr>`;
+        return;
+      }
+      [...responses].reverse().forEach(r => {
+        let tr = `
+          <tr class="hover:bg-slate-800/50 transition-colors">
+            <td class="p-3 text-[11px] font-mono text-slate-400 border-r border-slate-700/50">${r.date}</td>
+            <td class="p-3 font-bold text-white border-r border-slate-700/50">${r.nome}</td>
+            <td class="p-3 font-bold text-white border-r border-slate-700/50">${r.sobrenome}</td>
+            <td class="p-3 text-center font-black text-emerald-400 bg-emerald-950/20 border-r border-slate-700/50">${r.acertos || '-'}</td>
+        `;
+        questions.forEach(q => {
+          let a = r.respostas ? r.respostas[q.id] : '-';
+          let isCorrect = a === q.correct;
+          let badge = (a && a !== '-') ? (isCorrect ? 'bg-emerald-600 text-white' : 'bg-rose-900/80 text-rose-300 border border-rose-700/50') : 'bg-slate-800 text-slate-600';
+          tr += `<td class="p-3 text-center"><span class="inline-flex items-center justify-center w-7 h-7 rounded text-xs font-bold ${badge}">${a || '-'}</span></td>`;
+        });
+        tr += `</tr>`;
+        body.innerHTML += tr;
+      });
+    }
+
+    function exportCSV() {
+      if (responses.length === 0) return toast('Planilha Vazia!', true);
+      let csv = "Data,Nome,Sobrenome,Acertos," + questions.map((q,i) => `Questao_${i+1}`).join(",") + "\n";
+      responses.forEach(r => {
+        let safeF = (r.nome || '').replace(/,/g, " ");
+        let safeL = (r.sobrenome || '').replace(/,/g, " ");
+        csv += `"${r.date}","${safeF}","${safeL}","${r.acertos}",` + questions.map(q => `"${(r.respostas && r.respostas[q.id]) || '-'}"`).join(",") + "\n";
+      });
+      const blob = new Blob(["\uFEFF" + csv], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `Resultados_${lessonTitle.replace(/ /g,"_")}.csv`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+    }
+
+    // ==========================================
+    // UTILITÁRIOS
+    // ==========================================
+    function updateStatusBadge(isOnline) {
+      const badge = document.getElementById('badgeConnection');
+      if (isOnline) {
+        badge.className = "hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-950/60 text-emerald-400 border border-emerald-500/30";
+        badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse mr-1"></span> Ao Vivo`;
+      } else {
+        badge.className = "hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-950/60 text-rose-400 border border-rose-500/30";
+        badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-rose-400 mr-1"></span> Desconectado`;
+      }
+    }
+
+    function applyBackground(url) {
+      const bgDiv = document.getElementById('app-bg');
+      if (!url) { bgDiv.style.backgroundImage = 'none'; return; }
+      const match = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+      let finalUrl = (match && match[1]) ? `https://drive.google.com/uc?export=view&id=${match[1]}` : url;
+      bgDiv.style.backgroundImage = `url('${finalUrl}')`;
+    }
+
+    function toast(msg, isError = false) {
+      const t = document.getElementById('toast');
+      const icon = document.getElementById('toastIcon');
+      if (isError) {
+        icon.className = 'fa-solid fa-triangle-exclamation text-rose-400 text-lg';
+        t.style.backgroundColor = '#4c1d95';
+      } else {
+        icon.className = 'fa-solid fa-circle-check text-emerald-400 text-lg';
+        t.style.backgroundColor = '#1e293b';
+      }
+      document.getElementById('toastMsg').innerText = msg;
+      t.classList.remove('translate-y-24', 'opacity-0');
+      setTimeout(() => t.classList.add('translate-y-24', 'opacity-0'), 3000);
+    }
+  </script>
+</body>
+</html>

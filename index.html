@@ -1,0 +1,1188 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Questionário Interativo em Tempo Real - Google Sites</title>
+  
+  <!-- Tailwind CSS & FontAwesome -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+  
+  <!-- Firebase SDKs (Compat v9 para fácil integração em arquivo único) -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+  <style>
+    /* Otimizações e Estilo Glassmorphism Premium */
+    body { margin: 0; padding: 0; color: #f1f5f9; font-family: ui-sans-serif, system-ui, sans-serif; overflow-x: hidden; }
+    .glass-panel {
+      background: rgba(15, 23, 42, 0.78);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.7);
+    }
+    .hide-scrollbar::-webkit-scrollbar { display: none; }
+    .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    input:focus, textarea:focus, select:focus { outline: none; box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.5); border-color: #4f46e5; }
+    
+    /* Backgrounds */
+    #app-bg {
+      background-color: #020617;
+      background-size: cover;
+      background-position: center;
+      background-attachment: fixed;
+    }
+
+    @keyframes pulse-soft {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.7; transform: scale(0.98); }
+    }
+    .live-pulse {
+      animation: pulse-soft 2s infinite ease-in-out;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+  <!-- Camada de Fundo (Imagem Dinâmica) e Overlay -->
+  <div id="app-bg" class="fixed inset-0 z-[-2] transition-all duration-1000"></div>
+  <div class="fixed inset-0 z-[-1] bg-slate-950/80 backdrop-blur-sm"></div>
+
+  <!-- Header Fixo -->
+  <header class="glass-panel border-b-0 sticky top-0 z-40 shadow-xl border-b border-white/5">
+    <div class="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
+      
+      <!-- Logo + Título + Status Tempo Real -->
+      <div class="flex items-center space-x-3">
+        <div class="p-2 bg-indigo-600 rounded-lg shadow-[0_0_15px_rgba(79,70,229,0.4)]">
+          <i class="fa-solid fa-graduation-cap text-white text-lg w-5 text-center"></i>
+        </div>
+        <div>
+          <div class="flex items-center space-x-2">
+            <h1 id="headerLessonTitle" class="font-bold text-sm sm:text-lg text-white truncate max-w-[110px] sm:max-w-xs">Simulado Geral</h1>
+            <!-- Badge de Status Real-time -->
+            <span id="badgeConnection" class="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-950/60 text-emerald-400 border border-emerald-500/30">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse mr-1"></span> Tempo Real
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Menu de Abas -->
+      <nav class="flex space-x-1 sm:space-x-2 bg-slate-950/50 p-1 rounded-xl border border-slate-700/50">
+        <button onclick="switchTab('responder')" id="tabBtn-responder" class="px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all bg-indigo-600 text-white shadow">
+          <i class="fa-solid fa-pen-nib"></i> <span class="hidden sm:inline ml-1">Responder</span>
+        </button>
+        <button onclick="switchTab('perguntas')" id="tabBtn-perguntas" class="px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-xs sm:text-sm font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition-all">
+          <i class="fa-solid fa-lock" id="icon-lock-perguntas"></i> <span class="hidden sm:inline ml-1">Painel</span>
+        </button>
+        <button onclick="switchTab('respostas')" id="tabBtn-respostas" class="px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-xs sm:text-sm font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition-all">
+          <i class="fa-solid fa-lock" id="icon-lock-respostas"></i> <span class="hidden sm:inline ml-1">Dados</span>
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Notificações Toast -->
+  <div id="toast" class="fixed bottom-4 right-4 z-50 transform translate-y-24 opacity-0 transition-all duration-300 flex items-center space-x-3 bg-slate-800 text-white px-5 py-3 rounded-xl border border-slate-700 shadow-2xl">
+    <i id="toastIcon" class="fa-solid fa-circle-check text-emerald-400 text-lg"></i>
+    <span id="toastMsg" class="text-sm font-medium">Ação concluída!</span>
+  </div>
+
+  <main class="flex-1 max-w-6xl w-full mx-auto p-4 sm:p-6 pb-24">
+
+    <!-- =====================================
+         ABA 1: RESPONDER (Visão do Aluno)
+         ===================================== -->
+    <section id="tab-responder" class="tab-content max-w-2xl mx-auto space-y-6">
+      
+      <!-- Card Identificação -->
+      <div class="glass-panel p-5 sm:p-6 rounded-2xl border border-indigo-500/20 shadow-[0_0_20px_rgba(79,70,229,0.1)]">
+        <h2 class="text-lg font-bold text-white mb-4 flex items-center"><i class="fa-solid fa-user-astronaut text-indigo-400 mr-2"></i> Identificação</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-1">Nome</label>
+            <input type="text" id="studentFirstName" placeholder="Ex: João" class="w-full bg-slate-900/80 border border-slate-700 rounded-xl px-4 py-3 text-white transition-colors">
+          </div>
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-1">Sobrenome</label>
+            <input type="text" id="studentLastName" placeholder="Ex: Silva" class="w-full bg-slate-900/80 border border-slate-700 rounded-xl px-4 py-3 text-white transition-colors">
+          </div>
+        </div>
+      </div>
+
+      <!-- Card do Quiz -->
+      <div class="glass-panel p-5 sm:p-8 rounded-2xl relative overflow-hidden">
+        
+        <!-- Tela de Espera Dinâmica (Atualiza em tempo real sem F5) -->
+        <div id="noQuestionsNotice" class="hidden text-center py-12 space-y-4">
+          <div class="inline-flex p-4 bg-slate-800/80 text-amber-400 rounded-full border border-slate-700 shadow-inner live-pulse">
+            <i class="fa-solid fa-satellite-dish text-3xl"></i>
+          </div>
+          <h3 class="text-xl font-bold text-white">Aguardando Liberação pelo Professor</h3>
+          <p class="text-slate-400 text-sm max-w-sm mx-auto">Esta tela está conectada em tempo real. Assim que o professor liberar uma questão, ela aparecerá aqui automaticamente!</p>
+          <div class="pt-2">
+            <span class="inline-flex items-center text-xs text-indigo-400 bg-indigo-950/40 px-3 py-1 rounded-full border border-indigo-500/20">
+              <i class="fa-solid fa-spinner fa-spin mr-2"></i> Sincronizando com a sala...
+            </span>
+          </div>
+        </div>
+
+        <!-- Área de Questões Ativas -->
+        <div id="activeQuizArea" class="space-y-6">
+          <div class="flex items-center justify-between border-b border-slate-800 pb-4">
+            <span class="text-xs font-bold text-indigo-400 uppercase tracking-widest bg-indigo-900/30 px-3 py-1 rounded-full border border-indigo-500/30" id="quizProgressText">0 de 0</span>
+            <div class="w-32 bg-slate-800 h-2 rounded-full overflow-hidden border border-slate-700">
+              <div id="progressBar" class="bg-indigo-500 h-full w-0 transition-all duration-500 shadow-[0_0_8px_rgba(79,70,229,0.6)]"></div>
+            </div>
+          </div>
+          
+          <div class="min-h-[80px] flex items-center">
+            <p id="quizQuestionText" class="text-lg sm:text-2xl font-medium text-white leading-relaxed">...</p>
+          </div>
+          
+          <div class="space-y-3 pt-2" id="optionsContainer"></div>
+          
+          <div class="flex justify-between items-center pt-6 border-t border-slate-800">
+            <button onclick="prevQuestion()" id="prevBtn" class="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-sm font-semibold disabled:opacity-30 disabled:cursor-not-allowed transition-colors border border-slate-700">
+              <i class="fa-solid fa-arrow-left mr-1"></i> Voltar
+            </button>
+            <button onclick="nextQuestion()" id="nextBtn" class="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-bold transition shadow-lg shadow-indigo-500/20 flex items-center">
+              Próxima <i class="fa-solid fa-arrow-right ml-2"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Tela Final (Pronto para enviar) -->
+        <div id="quizFinishedArea" class="hidden text-center py-12 space-y-5">
+          <div class="inline-flex p-5 bg-emerald-900/30 text-emerald-400 rounded-full border border-emerald-500/30 mb-2 shadow-[0_0_30px_rgba(16,185,129,0.2)]">
+            <i class="fa-solid fa-flag-checkered text-4xl"></i>
+          </div>
+          <h3 class="text-2xl font-bold text-white">Você concluiu!</h3>
+          <p class="text-slate-400 text-sm mb-6 max-w-sm mx-auto">Verifique se o seu Nome e Sobrenome estão corretos acima antes de enviar os resultados para o professor.</p>
+          <button onclick="submitAnswers()" id="btnSubmitFinal" class="w-full sm:w-auto px-8 py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow-[0_0_15px_rgba(16,185,129,0.3)] transition transform hover:-translate-y-1">
+            <i class="fa-solid fa-paper-plane mr-2"></i> Enviar Avaliação
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- =====================================
+         ABA 2: PAINEL ADMINISTRATIVO (Professor)
+         ===================================== -->
+    <section id="tab-perguntas" class="tab-content hidden space-y-6">
+      
+      <!-- BANNER TEMPO REAL & FIREBASE -->
+      <div id="firebaseStatusCard" class="glass-panel p-5 rounded-2xl border-l-4 border-l-indigo-500 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div>
+          <div class="flex items-center space-x-2">
+            <span id="fbIndicatorDot" class="w-3 h-3 rounded-full bg-emerald-400 animate-pulse"></span>
+            <h3 id="fbStatusTitle" class="text-sm font-bold text-white uppercase tracking-wider">Sincronização em Tempo Real Ativa</h3>
+          </div>
+          <p id="fbStatusDesc" class="text-xs text-slate-300 mt-1">Qualquer alteração de questões ou liberação é transmitida na hora para todos os alunos conectados.</p>
+        </div>
+        <div class="flex gap-2">
+          <button onclick="openFirebaseConfigModal()" class="px-4 py-2 bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 border border-indigo-500/50 rounded-xl text-xs font-bold transition flex items-center">
+            <i class="fa-solid fa-cloud mr-1.5"></i> Configurar Firebase
+          </button>
+        </div>
+      </div>
+
+      <!-- GRID DE CONFIGURAÇÕES RÁPIDAS -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="glass-panel p-5 rounded-2xl space-y-3">
+          <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider"><i class="fa-solid fa-chalkboard-user mr-1 text-indigo-400"></i> Título da Aula (Sincronizado)</label>
+          <div class="flex space-x-2">
+            <input type="text" id="lessonTitleInput" class="w-full bg-slate-900/80 border border-slate-700 rounded-xl px-4 py-2 text-white text-sm">
+            <button onclick="saveSettings('title')" class="bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded-xl text-white font-bold text-sm transition shrink-0"><i class="fa-solid fa-save"></i></button>
+          </div>
+        </div>
+        <div class="glass-panel p-5 rounded-2xl space-y-3">
+          <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider"><i class="fa-solid fa-key mr-1 text-amber-400"></i> Senha do Painel (Mestre)</label>
+          <div class="flex space-x-2">
+            <input type="password" id="newAdminPassword" placeholder="Nova senha..." class="w-full bg-slate-900/80 border border-slate-700 rounded-xl px-4 py-2 text-white text-sm">
+            <button onclick="saveSettings('password')" class="bg-slate-700 hover:bg-slate-600 border border-slate-600 px-4 py-2 rounded-xl text-white font-bold text-sm transition shrink-0"><i class="fa-solid fa-save"></i></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- GRID DE INTEGRAÇÕES EXTERNAS -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <!-- Background Drive -->
+        <div class="glass-panel p-5 rounded-2xl space-y-3 border-l-4 border-l-pink-500">
+          <label class="block text-xs font-bold text-slate-300 uppercase tracking-wider"><i class="fa-brands fa-google-drive mr-1 text-pink-400"></i> Fundo do Site (Link do Drive)</label>
+          <p class="text-xs text-slate-400">Atualiza instantaneamente a imagem de fundo para todos os alunos conectados.</p>
+          <div class="flex space-x-2">
+            <input type="text" id="driveBgUrl" placeholder="https://drive.google.com/file/d/.../view" class="w-full bg-slate-900/80 border border-slate-700 rounded-xl px-4 py-2 text-white text-xs sm:text-sm">
+            <button onclick="saveSettings('background')" class="bg-pink-600 hover:bg-pink-500 px-4 py-2 rounded-xl text-white font-bold text-sm transition shrink-0">Aplicar</button>
+          </div>
+        </div>
+
+        <!-- Google Sheets API (Opcional além do Firebase) -->
+        <div class="glass-panel p-5 rounded-2xl space-y-3 border-l-4 border-l-emerald-500">
+          <div class="flex justify-between items-start">
+            <label class="block text-xs font-bold text-slate-300 uppercase tracking-wider"><i class="fa-solid fa-file-excel mr-1 text-emerald-400"></i> Backup Google Sheets (Apps Script)</label>
+            <button onclick="openScriptModal()" class="text-[10px] bg-emerald-900/50 text-emerald-400 px-2 py-1 rounded border border-emerald-500/50 hover:bg-emerald-800 transition"><i class="fa-solid fa-code"></i> Ver Script</button>
+          </div>
+          <p class="text-[11px] text-slate-400 leading-tight">Além do tempo real, envia uma cópia de backup para a sua planilha Google se configurado.</p>
+          <div class="flex space-x-2">
+            <input type="text" id="sheetsAppUrl" placeholder="https://script.google.com/macros/s/.../exec" class="w-full bg-slate-900/80 border border-slate-700 rounded-xl px-4 py-2 text-white text-xs sm:text-sm">
+            <button onclick="saveSettings('sheets')" class="bg-emerald-600 hover:bg-emerald-500 px-4 py-2 rounded-xl text-white font-bold text-sm transition shrink-0">Vincular</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- BANCO DE PERGUNTAS -->
+      <div class="glass-panel p-5 sm:p-6 rounded-2xl space-y-6">
+        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-700 pb-5">
+          <div>
+            <div class="flex items-center space-x-2">
+              <h2 class="text-xl font-bold text-white">Banco de Questões</h2>
+              <span class="text-xs bg-indigo-900/50 text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-500/30">Nuvem</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">Clique em "Liberar" para abrir a questão na tela dos alunos em tempo real.</p>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <button onclick="setAllQuestionsStatus(true)" class="px-3 py-2 bg-indigo-900/30 text-indigo-300 border border-indigo-700/50 rounded-lg text-xs font-bold hover:bg-indigo-800/40 transition">
+              <i class="fa-solid fa-eye mr-1"></i> Liberar Todas
+            </button>
+            <button onclick="setAllQuestionsStatus(false)" class="px-3 py-2 bg-slate-800 text-slate-400 border border-slate-700 rounded-lg text-xs font-bold hover:bg-slate-700 transition">
+              <i class="fa-solid fa-eye-slash mr-1"></i> Ocultar Todas
+            </button>
+            <button onclick="openQuestionModal()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold shadow-lg transition">
+              <i class="fa-solid fa-plus mr-1"></i> Nova Questão
+            </button>
+          </div>
+        </div>
+
+        <div id="questionsList" class="space-y-4">
+          <!-- Renderizado via JS -->
+        </div>
+      </div>
+    </section>
+
+    <!-- =====================================
+         ABA 3: DADOS / PLANILHA (Professor)
+         ===================================== -->
+    <section id="tab-respostas" class="tab-content hidden space-y-6">
+      
+      <div class="glass-panel p-5 sm:p-6 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h2 class="text-lg font-bold text-white flex items-center space-x-2">
+            <div class="p-2 bg-emerald-900/50 rounded-lg border border-emerald-500/30"><i class="fa-solid fa-square-poll-vertical text-emerald-400"></i></div>
+            <span>Respostas Recebidas (Tempo Real)</span>
+          </h2>
+          <p class="text-xs text-slate-400 mt-1">Conforme os alunos enviam, a linha aparece aqui instantaneamente.</p>
+        </div>
+        <div class="space-x-2 flex w-full sm:w-auto">
+          <button onclick="clearResponses()" class="flex-1 sm:flex-none px-4 py-2.5 bg-rose-900/30 hover:bg-rose-900/50 text-rose-400 border border-rose-700/50 rounded-xl text-xs font-bold transition flex items-center justify-center">
+            <i class="fa-solid fa-trash-can mr-2"></i> Limpar Tudo
+          </button>
+          <button onclick="exportCSV()" class="flex-1 sm:flex-none px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-lg transition flex items-center justify-center">
+            <i class="fa-solid fa-download mr-2"></i> Baixar CSV
+          </button>
+        </div>
+      </div>
+
+      <div class="glass-panel rounded-2xl overflow-x-auto shadow-2xl border border-slate-700">
+        <table class="w-full text-left text-sm whitespace-nowrap">
+          <thead class="bg-slate-900/90 text-[10px] sm:text-xs uppercase text-slate-400 border-b border-slate-700 tracking-wider">
+            <tr id="tableHeader">
+              <!-- Renderizado via JS -->
+            </tr>
+          </thead>
+          <tbody id="tableBody" class="divide-y divide-slate-800/80 text-slate-300 bg-slate-900/30">
+            <!-- Renderizado via JS -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- =====================================
+       MODAIS E OVERLAYS
+       ===================================== -->
+       
+  <!-- Modal de Configuração do Firebase -->
+  <div id="firebaseModal" class="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 max-w-xl w-full rounded-2xl p-6 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div class="flex justify-between items-center mb-4 border-b border-slate-800 pb-3">
+        <h3 class="text-lg font-bold text-white flex items-center"><i class="fa-solid fa-fire text-amber-500 mr-2"></i> Configuração do Firebase (Tempo Real)</h3>
+        <button onclick="closeFirebaseConfigModal()" class="text-slate-500 hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
+      </div>
+
+      <div class="space-y-4 overflow-y-auto pr-1">
+        <p class="text-xs text-slate-300 leading-relaxed">
+          Para que qualquer aluno conectado receba suas perguntas <strong>instantaneamente</strong>, conecte seu banco de dados Firebase (gratuito do Google):
+        </p>
+
+        <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 text-xs text-slate-400 space-y-1">
+          <p class="font-bold text-indigo-300">Como pegar em 2 minutos:</p>
+          <p>1. Acesse <strong>console.firebase.google.com</strong> e crie um projeto gratuito.</p>
+          <p>2. No menu lateral, clique em <strong>Realtime Database</strong> > Criar Banco de Dados > Iniciar no modo de teste.</p>
+          <p>3. Nas Configurações do Projeto (ícone de engrenagem) > Adicionar App Web (<strong>&lt;/&gt;</strong>) e copie o <code>firebaseConfig</code>.</p>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-1">Cole aqui o objeto firebaseConfig (JSON ou código)</label>
+          <textarea id="firebaseConfigInput" rows="6" placeholder='const firebaseConfig = {
+  apiKey: "AIzaSy...",
+  authDomain: "seu-projeto.firebaseapp.com",
+  databaseURL: "https://seu-projeto-default-rtdb.firebaseio.com",
+  projectId: "seu-projeto",
+  storageBucket: "...",
+  messagingSenderId: "...",
+  appId: "..."
+};' class="w-full bg-slate-950 font-mono text-xs border border-slate-700 rounded-xl p-3 text-emerald-400 transition-colors resize-none"></textarea>
+        </div>
+      </div>
+
+      <div class="flex justify-end space-x-3 mt-5 pt-3 border-t border-slate-800">
+        <button onclick="closeFirebaseConfigModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition">Fechar</button>
+        <button onclick="applyFirebaseConfig()" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition shadow-lg"><i class="fa-solid fa-bolt mr-1"></i> Salvar e Conectar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Autenticação (Senha) -->
+  <div id="authModal" class="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-md hidden flex items-center justify-center p-4 transition-opacity">
+    <div class="bg-slate-900 border border-slate-700 max-w-sm w-full rounded-3xl p-8 shadow-2xl text-center">
+      <div class="mx-auto w-16 h-16 bg-indigo-900/30 text-indigo-400 rounded-full flex items-center justify-center mb-4 text-2xl border border-indigo-500/20">
+        <i class="fa-solid fa-lock"></i>
+      </div>
+      <h3 class="text-xl font-bold text-white mb-2">Painel do Professor</h3>
+      <p class="text-sm text-slate-400 mb-6">Insira a senha mestra para gerenciar o sistema.</p>
+      
+      <input type="password" id="adminPassword" placeholder="••••••••" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-white text-center text-xl tracking-widest mb-6 focus:border-indigo-500 transition-colors">
+      
+      <div class="flex justify-between space-x-3">
+        <button onclick="cancelAuth()" class="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-sm font-bold transition border border-slate-700">Voltar</button>
+        <button onclick="verifyPassword()" class="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-bold shadow-lg transition">Desbloquear</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Código Google Apps Script -->
+  <div id="scriptModal" class="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 max-w-2xl w-full rounded-2xl p-6 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="text-lg font-bold text-white flex items-center"><i class="fa-solid fa-code text-emerald-400 mr-2"></i> Código Google Apps Script (Backup Planilha)</h3>
+        <button onclick="closeScriptModal()" class="text-slate-500 hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
+      </div>
+      <p class="text-xs text-slate-400 mb-4">Se desejar salvar uma cópia simultânea no Google Planilhas, crie uma Planilha > <strong>Extensões > Apps Script</strong>, cole o código abaixo, implante como <strong>App da Web</strong> e vincule a URL no painel.</p>
+      
+      <div class="relative flex-1 overflow-y-auto bg-slate-950 rounded-xl border border-slate-800 p-4">
+        <button onclick="copyScriptCode()" class="absolute top-2 right-2 bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg text-[10px] font-bold border border-slate-600 uppercase flex items-center transition">
+          <i class="fa-regular fa-copy mr-1"></i> Copiar
+        </button>
+        <pre class="text-[11px] text-emerald-400 font-mono whitespace-pre-wrap leading-relaxed" id="scriptCodeText">
+function doPost(e) {
+  try {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    var data = JSON.parse(e.postData.contents);
+    
+    var rowData = [
+      data.date, 
+      data.nome, 
+      data.sobrenome, 
+      data.acertos, 
+      JSON.stringify(data.respostas)
+    ];
+    
+    sheet.appendRow(rowData);
+    return ContentService.createTextOutput(JSON.stringify({result: "success"})).setMimeType(ContentService.MimeType.JSON);
+  } catch(error) {
+    return ContentService.createTextOutput(JSON.stringify({error: error.message})).setMimeType(ContentService.MimeType.JSON);
+  }
+}</pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Pergunta (Nova / Editar) -->
+  <div id="questionModal" class="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 max-w-lg w-full rounded-3xl p-6 shadow-2xl">
+      <div class="flex justify-between items-center mb-5 border-b border-slate-800 pb-3">
+        <h3 id="modalTitle" class="text-lg font-bold text-white">Nova Pergunta</h3>
+        <button onclick="closeQuestionModal()" class="text-slate-500 hover:text-white transition w-8 h-8 rounded-lg flex items-center justify-center bg-slate-800"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      
+      <div class="space-y-4">
+        <div>
+          <label class="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Enunciado da Questão</label>
+          <textarea id="modalQuestionText" placeholder="Ex: Quem descobriu o Brasil?" rows="3" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-white text-sm transition-colors resize-none"></textarea>
+        </div>
+        
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+          <div><label class="block text-[10px] font-bold text-indigo-400 mb-1">Alternativa A</label><input type="text" id="modalOptA" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white transition-colors"></div>
+          <div><label class="block text-[10px] font-bold text-indigo-400 mb-1">Alternativa B</label><input type="text" id="modalOptB" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white transition-colors"></div>
+          <div><label class="block text-[10px] font-bold text-indigo-400 mb-1">Alternativa C</label><input type="text" id="modalOptC" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white transition-colors"></div>
+          <div><label class="block text-[10px] font-bold text-indigo-400 mb-1">Alternativa D</label><input type="text" id="modalOptD" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white transition-colors"></div>
+        </div>
+
+        <!-- Seletor de Resposta Correta (Gabarito) -->
+        <div class="pt-2">
+          <label class="block text-[11px] font-bold text-emerald-400 uppercase tracking-wider mb-2"><i class="fa-solid fa-bullseye mr-1"></i> Gabarito (Opção Correta)</label>
+          <select id="modalCorrectOption" class="w-full bg-slate-950 border border-emerald-500/50 text-white text-sm rounded-xl px-3 py-2.5 cursor-pointer hover:border-emerald-500 transition-colors appearance-none">
+            <option value="A">Alternativa A</option>
+            <option value="B">Alternativa B</option>
+            <option value="C">Alternativa C</option>
+            <option value="D">Alternativa D</option>
+          </select>
+        </div>
+      </div>
+      
+      <div class="flex justify-end space-x-3 mt-6 pt-4 border-t border-slate-800">
+        <button onclick="closeQuestionModal()" class="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-sm font-semibold transition">Cancelar</button>
+        <button onclick="saveQuestion()" class="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-bold shadow-lg transition"><i class="fa-solid fa-check mr-2"></i> Salvar e Transmitir</button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- =====================================
+       LÓGICA JAVASCRIPT & TEMPO REAL
+       ===================================== -->
+  <script>
+    // =========================================================================
+    // 1. CONFIGURAÇÃO DO FIREBASE (TEMPO REAL)
+    // =========================================================================
+    // DICA: Cole suas credenciais do Firebase aqui para que TODOS os alunos
+    // que acessarem o site pelo Google Sites conectem automaticamente!
+    const DEFAULT_FIREBASE_CONFIG = {
+      apiKey: "",
+      authDomain: "",
+      databaseURL: "",
+      projectId: "",
+      storageBucket: "",
+      messagingSenderId: "",
+      appId: ""
+    };
+
+    // --- CHAVES DE STORAGE LOCAL (FALLBACK / CACHE) ---
+    const APP_KEYS = {
+      TITLE: 'gsites_title_v3',
+      QS: 'gsites_qs_v3',
+      RES: 'gsites_res_v3',
+      PWD: 'gsites_admin_pwd_v3',
+      BG_URL: 'gsites_bg_url_v3',
+      GAS_URL: 'gsites_gas_url_v3',
+      FB_CONF: 'gsites_fb_conf_v3'
+    };
+
+    // --- ESTADO DA APLICAÇÃO ---
+    let db = null;
+    let isFirebaseLive = false;
+
+    let adminPwd = localStorage.getItem(APP_KEYS.PWD) || 'prof123';
+    let isAdminAuthenticated = false;
+    let pendingTab = null;
+
+    let lessonTitle = localStorage.getItem(APP_KEYS.TITLE) || 'Simulado Geral';
+    let sheetsApiUrl = localStorage.getItem(APP_KEYS.GAS_URL) || '';
+    let backgroundDriveUrl = localStorage.getItem(APP_KEYS.BG_URL) || '';
+    
+    let questions = JSON.parse(localStorage.getItem(APP_KEYS.QS)) || [
+      { id: 1, title: "Qual é a capital do Brasil?", visible: true, options: { A: "Rio de Janeiro", B: "São Paulo", C: "Brasília", D: "Salvador" }, correct: "C" },
+    ];
+    let responses = JSON.parse(localStorage.getItem(APP_KEYS.RES)) || [];
+    
+    let activeIndex = 0;
+    let selectedAnswers = {};
+    let editId = null;
+    let lastVisibleQuestionCount = -1;
+
+    // =========================================================================
+    // 2. INICIALIZAÇÃO
+    // =========================================================================
+    document.addEventListener("DOMContentLoaded", () => {
+      document.getElementById('headerLessonTitle').innerText = lessonTitle;
+      document.getElementById('lessonTitleInput').value = lessonTitle;
+      document.getElementById('sheetsAppUrl').value = sheetsApiUrl;
+      document.getElementById('driveBgUrl').value = backgroundDriveUrl;
+      
+      applyBackground(backgroundDriveUrl);
+      renderQuestionsList();
+      renderQuizArea();
+      renderResponsesTable();
+      
+      // Iniciar Conexão Firebase
+      setupFirebase();
+
+      document.getElementById('adminPassword').addEventListener('keypress', (e) => { if (e.key === 'Enter') verifyPassword(); });
+      document.getElementById('newAdminPassword').addEventListener('keypress', (e) => { if (e.key === 'Enter') saveSettings('password'); });
+    });
+
+    // =========================================================================
+    // 3. MOTOR FIREBASE & TEMPO REAL
+    // =========================================================================
+    function getActiveFirebaseConfig() {
+      // 1. Tentar do localStorage (configurado via painel)
+      const stored = localStorage.getItem(APP_KEYS.FB_CONF);
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          if (parsed && (parsed.apiKey || parsed.databaseURL)) return parsed;
+        } catch(e) {}
+      }
+      // 2. Tentar da constante no topo do script
+      if (DEFAULT_FIREBASE_CONFIG.apiKey && (DEFAULT_FIREBASE_CONFIG.databaseURL || DEFAULT_FIREBASE_CONFIG.projectId)) {
+        return DEFAULT_FIREBASE_CONFIG;
+      }
+      return null;
+    }
+
+    function setupFirebase() {
+      const config = getActiveFirebaseConfig();
+      if (!config) {
+        setLiveStatusUI(false, "Modo Local (Offline)");
+        return;
+      }
+
+      try {
+        if (!firebase.apps.length) {
+          firebase.initializeApp(config);
+        }
+        db = firebase.database();
+        isFirebaseLive = true;
+        setLiveStatusUI(true, "Tempo Real Ativo");
+
+        // Escutadores em Tempo Real (WebSockets nativos do Firebase)
+        listenToFirebase();
+      } catch (err) {
+        console.error("Falha ao conectar no Firebase:", err);
+        setLiveStatusUI(false, "Erro ao Conectar");
+      }
+    }
+
+    function listenToFirebase() {
+      if (!db) return;
+
+      // 1. Escutar Mudanças nas Configurações (Título, Fundo, etc)
+      db.ref('quiz/settings').on('value', snapshot => {
+        const data = snapshot.val();
+        if (data) {
+          if (data.lessonTitle && data.lessonTitle !== lessonTitle) {
+            lessonTitle = data.lessonTitle;
+            document.getElementById('headerLessonTitle').innerText = lessonTitle;
+            document.getElementById('lessonTitleInput').value = lessonTitle;
+            localStorage.setItem(APP_KEYS.TITLE, lessonTitle);
+          }
+          if (data.backgroundDriveUrl !== undefined && data.backgroundDriveUrl !== backgroundDriveUrl) {
+            backgroundDriveUrl = data.backgroundDriveUrl;
+            document.getElementById('driveBgUrl').value = backgroundDriveUrl;
+            applyBackground(backgroundDriveUrl);
+            localStorage.setItem(APP_KEYS.BG_URL, backgroundDriveUrl);
+          }
+          if (data.sheetsAppUrl !== undefined && data.sheetsAppUrl !== sheetsApiUrl) {
+            sheetsApiUrl = data.sheetsAppUrl;
+            document.getElementById('sheetsAppUrl').value = sheetsApiUrl;
+            localStorage.setItem(APP_KEYS.GAS_URL, sheetsApiUrl);
+          }
+        }
+      });
+
+      // 2. Escutar Perguntas em Tempo Real (Adições, Edições, Liberação/Bloqueio)
+      db.ref('quiz/questions').on('value', snapshot => {
+        const val = snapshot.val();
+        let cloudQuestions = [];
+
+        if (val) {
+          if (Array.isArray(val)) {
+            cloudQuestions = val.filter(Boolean);
+          } else if (typeof val === 'object') {
+            cloudQuestions = Object.values(val);
+          }
+        }
+
+        // Se o Firebase estiver vazio pela primeira vez, sobe as questões locais iniciais
+        if ((!val || cloudQuestions.length === 0) && questions.length > 0) {
+          db.ref('quiz/questions').set(questions);
+          return;
+        }
+
+        questions = cloudQuestions;
+        localStorage.setItem(APP_KEYS.QS, JSON.stringify(questions));
+
+        // Detectar se novas questões foram liberadas para os alunos
+        const currentVisibles = questions.filter(q => q.visible).length;
+        if (lastVisibleQuestionCount !== -1 && currentVisibles > lastVisibleQuestionCount) {
+          toast("📢 Nova questão liberada pelo professor!");
+        }
+        lastVisibleQuestionCount = currentVisibles;
+
+        renderQuestionsList();
+        renderQuizArea();
+        renderResponsesTable();
+      });
+
+      // 3. Escutar Respostas dos Alunos em Tempo Real
+      db.ref('quiz/responses').on('value', snapshot => {
+        const val = snapshot.val();
+        if (val) {
+          responses = Object.keys(val).map(k => ({ id: k, ...val[k] }));
+        } else {
+          responses = [];
+        }
+        localStorage.setItem(APP_KEYS.RES, JSON.stringify(responses));
+        renderResponsesTable();
+      });
+    }
+
+    function setLiveStatusUI(isLive, label) {
+      const badge = document.getElementById('badgeConnection');
+      const dot = document.getElementById('fbIndicatorDot');
+      const title = document.getElementById('fbStatusTitle');
+      const desc = document.getElementById('fbStatusDesc');
+
+      if (isLive) {
+        badge.className = "hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-950/60 text-emerald-400 border border-emerald-500/30";
+        badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse mr-1"></span> Tempo Real`;
+
+        if (dot) dot.className = "w-3 h-3 rounded-full bg-emerald-400 animate-pulse";
+        if (title) title.innerText = "Sincronização em Tempo Real Conectada";
+        if (desc) desc.innerText = "Qualquer questão adicionada, alterada ou liberada é recebida na hora pelos alunos.";
+      } else {
+        badge.className = "hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-950/60 text-amber-400 border border-amber-500/30";
+        badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-amber-400 mr-1"></span> ${label}`;
+
+        if (dot) dot.className = "w-3 h-3 rounded-full bg-amber-400";
+        if (title) title.innerText = "Modo Local (Firebase Desconectado)";
+        if (desc) desc.innerText = "As alterações só funcionam neste navegador. Configure o Firebase para sincronizar entre todos os computadores/alunos em tempo real.";
+      }
+    }
+
+    // Modal de Configuração do Firebase
+    function openFirebaseConfigModal() {
+      const current = localStorage.getItem(APP_KEYS.FB_CONF) || JSON.stringify(DEFAULT_FIREBASE_CONFIG, null, 2);
+      document.getElementById('firebaseConfigInput').value = current;
+      document.getElementById('firebaseModal').classList.remove('hidden');
+    }
+
+    function closeFirebaseConfigModal() {
+      document.getElementById('firebaseModal').classList.add('hidden');
+    }
+
+    function applyFirebaseConfig() {
+      const text = document.getElementById('firebaseConfigInput').value.trim();
+      let parsed = null;
+
+      try {
+        parsed = JSON.parse(text);
+      } catch (e) {
+        // Tentar extrair chaves caso seja formato JS "apiKey: '...'"
+        parsed = {};
+        ['apiKey', 'authDomain', 'databaseURL', 'projectId', 'storageBucket', 'messagingSenderId', 'appId'].forEach(k => {
+          const match = text.match(new RegExp(`${k}["']?\\s*:\\s*["']([^"']+)["']`));
+          if (match) parsed[k] = match[1];
+        });
+        if (!parsed.apiKey) {
+          return toast("Configuração inválida! Cole o código ou JSON do Firebase.", true);
+        }
+        if (!parsed.databaseURL && parsed.projectId) {
+          parsed.databaseURL = `https://${parsed.projectId}-default-rtdb.firebaseio.com`;
+        }
+      }
+
+      localStorage.setItem(APP_KEYS.FB_CONF, JSON.stringify(parsed));
+      closeFirebaseConfigModal();
+      toast("Configuração salva! Reiniciando conexão...");
+      setupFirebase();
+    }
+
+    // =========================================================================
+    // 4. FEEDBACK VISUAL & ESTILOS
+    // =========================================================================
+    function applyBackground(url) {
+      const bgDiv = document.getElementById('app-bg');
+      if (!url) {
+        bgDiv.style.backgroundImage = 'none';
+        return;
+      }
+      const driveRegex = /\/file\/d\/([a-zA-Z0-9_-]+)/;
+      const match = url.match(driveRegex);
+      let finalUrl = url;
+      if (match && match[1]) {
+        finalUrl = `https://drive.google.com/uc?export=view&id=${match[1]}`;
+      }
+      bgDiv.style.backgroundImage = `url('${finalUrl}')`;
+    }
+
+    function toast(msg, isError = false) {
+      const t = document.getElementById('toast');
+      const icon = document.getElementById('toastIcon');
+      
+      if (isError) {
+        icon.className = 'fa-solid fa-triangle-exclamation text-rose-400 text-lg';
+        t.classList.replace('border-slate-700', 'border-rose-900/80');
+        t.style.backgroundColor = '#4c1d95';
+      } else {
+        icon.className = 'fa-solid fa-circle-check text-emerald-400 text-lg';
+        t.classList.replace('border-rose-900/80', 'border-slate-700');
+        t.style.backgroundColor = '#1e293b';
+      }
+      
+      document.getElementById('toastMsg').innerText = msg;
+      t.classList.remove('translate-y-24', 'opacity-0');
+      setTimeout(() => t.classList.add('translate-y-24', 'opacity-0'), 3200);
+    }
+
+    // =========================================================================
+    // 5. AUTENTICAÇÃO E NAVEGAÇÃO
+    // =========================================================================
+    function switchTab(tab) {
+      if ((tab === 'perguntas' || tab === 'respostas') && !isAdminAuthenticated) {
+        pendingTab = tab;
+        document.getElementById('authModal').classList.remove('hidden');
+        setTimeout(() => document.getElementById('adminPassword').focus(), 100);
+        return;
+      }
+      forceSwitchTab(tab);
+    }
+
+    function verifyPassword() {
+      const input = document.getElementById('adminPassword').value;
+      if (input === adminPwd) {
+        isAdminAuthenticated = true;
+        document.getElementById('authModal').classList.add('hidden');
+        document.getElementById('adminPassword').value = '';
+        
+        document.getElementById('icon-lock-perguntas').className = 'fa-solid fa-gear text-indigo-400';
+        document.getElementById('icon-lock-respostas').className = 'fa-solid fa-table text-emerald-400';
+        
+        toast('Autenticado com sucesso!');
+        if(pendingTab) forceSwitchTab(pendingTab);
+      } else {
+        toast('Senha incorreta!', true);
+      }
+    }
+
+    function cancelAuth() {
+      document.getElementById('authModal').classList.add('hidden');
+      document.getElementById('adminPassword').value = '';
+      pendingTab = null;
+    }
+
+    function forceSwitchTab(tab) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+      document.querySelectorAll('nav button').forEach(btn => {
+        btn.classList.remove('bg-indigo-600', 'text-white', 'shadow');
+        btn.classList.add('text-slate-400', 'hover:bg-slate-800');
+      });
+      
+      document.getElementById(`tab-${tab}`).classList.remove('hidden');
+      const activeBtn = document.getElementById(`tabBtn-${tab}`);
+      activeBtn.classList.add('bg-indigo-600', 'text-white', 'shadow');
+      activeBtn.classList.remove('text-slate-400', 'hover:bg-slate-800');
+      
+      if (tab === 'responder') renderQuizArea();
+      if (tab === 'respostas') renderResponsesTable();
+    }
+
+    // =========================================================================
+    // 6. SALVAMENTO DE CONFIGURAÇÕES & SINCRONIZAÇÃO
+    // =========================================================================
+    function saveSettings(type) {
+      if (type === 'title') {
+        lessonTitle = document.getElementById('lessonTitleInput').value.trim() || 'Aula Interativa';
+        localStorage.setItem(APP_KEYS.TITLE, lessonTitle);
+        document.getElementById('headerLessonTitle').innerText = lessonTitle;
+        if (db) db.ref('quiz/settings').update({ lessonTitle });
+        toast('Título salvo e atualizado para todos!');
+      } else if (type === 'password') {
+        const inputVal = document.getElementById('newAdminPassword').value.trim();
+        if (!inputVal) return toast('Digite uma senha válida!', true);
+        adminPwd = inputVal;
+        localStorage.setItem(APP_KEYS.PWD, adminPwd);
+        document.getElementById('newAdminPassword').value = '';
+        toast('Senha alterada!');
+      } else if (type === 'background') {
+        backgroundDriveUrl = document.getElementById('driveBgUrl').value.trim();
+        localStorage.setItem(APP_KEYS.BG_URL, backgroundDriveUrl);
+        applyBackground(backgroundDriveUrl);
+        if (db) db.ref('quiz/settings').update({ backgroundDriveUrl });
+        toast('Fundo aplicado e transmitido!');
+      } else if (type === 'sheets') {
+        sheetsApiUrl = document.getElementById('sheetsAppUrl').value.trim();
+        localStorage.setItem(APP_KEYS.GAS_URL, sheetsApiUrl);
+        if (db) db.ref('quiz/settings').update({ sheetsAppUrl: sheetsApiUrl });
+        toast('Link do Google Sheets salvo!');
+      }
+    }
+
+    function openScriptModal() { document.getElementById('scriptModal').classList.remove('hidden'); }
+    function closeScriptModal() { document.getElementById('scriptModal').classList.add('hidden'); }
+    function copyScriptCode() {
+      const code = document.getElementById('scriptCodeText').innerText;
+      navigator.clipboard.writeText(code).then(() => toast('Código copiado!'));
+    }
+
+    // =========================================================================
+    // 7. GERENCIAMENTO DE PERGUNTAS (TRANSMISSÃO EM TEMPO REAL)
+    // =========================================================================
+    function syncQuestions() {
+      localStorage.setItem(APP_KEYS.QS, JSON.stringify(questions));
+      if (db) {
+        db.ref('quiz/questions').set(questions);
+      }
+    }
+
+    function renderQuestionsList() {
+      const list = document.getElementById('questionsList');
+      if (!list) return;
+      list.innerHTML = '';
+      
+      if(questions.length === 0) {
+        list.innerHTML = '<div class="text-center py-8 text-slate-500 border border-dashed border-slate-700 rounded-xl">Sem questões cadastradas.</div>';
+        return;
+      }
+
+      questions.forEach((q, i) => {
+        const isVis = q.visible;
+        const renderOption = (letter, text) => {
+           const isCorrect = q.correct === letter;
+           return `<div class="bg-slate-950/50 p-2 rounded border ${isCorrect ? 'border-emerald-500/50 bg-emerald-900/20 text-emerald-300' : 'border-slate-700/50 text-slate-300'}">
+                     <strong class="${isCorrect ? 'text-emerald-400' : 'text-indigo-400'} mr-1">${letter}:</strong> ${text}
+                     ${isCorrect ? '<i class="fa-solid fa-check text-[10px] ml-1"></i>' : ''}
+                   </div>`;
+        };
+
+        list.innerHTML += `
+          <div class="p-5 rounded-2xl border transition-all ${isVis ? 'bg-slate-800/80 border-indigo-500/30' : 'bg-slate-900 border-slate-800 opacity-70'}">
+            <div class="flex flex-col md:flex-row justify-between items-start gap-4">
+              <div class="space-y-2 flex-1 w-full">
+                <div class="flex items-center justify-between sm:justify-start space-x-3">
+                  <span class="text-[10px] font-bold px-2 py-0.5 rounded tracking-wider ${isVis ? 'bg-indigo-900/60 text-indigo-300 border border-indigo-500/30' : 'bg-slate-800 text-slate-500 border border-slate-600'}">
+                    ${isVis ? '🟢 LIBERADA (Alunos veem)' : '🔴 BLOQUEADA (Oculta)'}
+                  </span>
+                  <span class="text-xs font-bold text-slate-500">QUESTÃO ${i+1}</span>
+                </div>
+                <h3 class="font-bold text-white text-base leading-snug">${q.title}</h3>
+                
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3 text-xs">
+                  ${renderOption('A', q.options.A)} ${renderOption('B', q.options.B)}
+                  ${renderOption('C', q.options.C)} ${renderOption('D', q.options.D)}
+                </div>
+              </div>
+              
+              <div class="flex flex-row md:flex-col items-center gap-2 shrink-0 w-full md:w-auto mt-2 md:mt-0 pt-3 md:pt-0 border-t md:border-t-0 border-slate-700">
+                <button onclick="toggleQ(${q.id})" class="flex-1 md:w-full px-3 py-2 bg-slate-950 hover:bg-slate-700 rounded-lg text-xs font-bold text-white border border-slate-700 transition flex items-center justify-center">
+                  ${isVis ? '<i class="fa-solid fa-eye-slash mr-1 text-amber-400"></i> Ocultar' : '<i class="fa-solid fa-eye mr-1 text-emerald-400"></i> Liberar'}
+                </button>
+                <button onclick="openQuestionModal(${q.id})" class="flex-1 md:w-full px-3 py-2 bg-indigo-900/30 hover:bg-indigo-900/50 text-indigo-300 border border-indigo-700/50 rounded-lg text-xs font-bold transition flex items-center justify-center"><i class="fa-solid fa-pen mr-1"></i> Editar</button>
+                <button onclick="deleteQ(${q.id})" class="w-10 md:w-full py-2 bg-rose-900/30 hover:bg-rose-900/50 text-rose-400 border border-rose-700/50 rounded-lg text-xs transition flex items-center justify-center"><i class="fa-solid fa-trash-can"></i></button>
+              </div>
+            </div>
+          </div>
+        `;
+      });
+    }
+
+    function toggleQ(id) { 
+      let q = questions.find(x => x.id === id); 
+      if (!q) return;
+      q.visible = !q.visible; 
+      syncQuestions(); 
+      renderQuestionsList(); 
+      toast(q.visible ? 'Questão liberada em tempo real!' : 'Questão bloqueada!'); 
+    }
+
+    function setAllQuestionsStatus(status) { 
+      questions.forEach(q => q.visible = status); 
+      syncQuestions(); 
+      renderQuestionsList(); 
+      toast(status ? 'Todas liberadas para os alunos!' : 'Todas bloqueadas!'); 
+    }
+
+    function deleteQ(id) { 
+      if(confirm('Apagar esta questão permanentemente para todos?')) { 
+        questions = questions.filter(x => x.id !== id); 
+        syncQuestions(); 
+        renderQuestionsList(); 
+        toast('Questão removida.'); 
+      } 
+    }
+
+    function openQuestionModal(id = null) {
+      editId = id;
+      document.getElementById('questionModal').classList.remove('hidden');
+      if (id) {
+        let q = questions.find(x => x.id === id);
+        document.getElementById('modalTitle').innerText = 'Editar Questão';
+        document.getElementById('modalQuestionText').value = q.title;
+        document.getElementById('modalOptA').value = q.options.A;
+        document.getElementById('modalOptB').value = q.options.B;
+        document.getElementById('modalOptC').value = q.options.C;
+        document.getElementById('modalOptD').value = q.options.D;
+        document.getElementById('modalCorrectOption').value = q.correct || 'A';
+      } else {
+        document.getElementById('modalTitle').innerText = 'Nova Questão';
+        document.querySelectorAll('#questionModal input[type="text"], #questionModal textarea').forEach(i => i.value = '');
+        document.getElementById('modalCorrectOption').value = 'A';
+      }
+    }
+    
+    function closeQuestionModal() { document.getElementById('questionModal').classList.add('hidden'); }
+    
+    function saveQuestion() {
+      let title = document.getElementById('modalQuestionText').value.trim();
+      let opts = {
+        A: document.getElementById('modalOptA').value.trim(), B: document.getElementById('modalOptB').value.trim(),
+        C: document.getElementById('modalOptC').value.trim(), D: document.getElementById('modalOptD').value.trim()
+      };
+      let correct = document.getElementById('modalCorrectOption').value;
+      
+      if(!title || !opts.A || !opts.B || !opts.C || !opts.D) return toast('Preencha as opções e enunciado!', true);
+      
+      if (editId) {
+        let q = questions.find(x => x.id === editId);
+        q.title = title; q.options = opts; q.correct = correct;
+        toast('Questão atualizada na nuvem!');
+      } else {
+        questions.push({ id: Date.now(), title, visible: true, options: opts, correct });
+        toast('Questão criada e liberada na sala!');
+      }
+      
+      syncQuestions(); 
+      closeQuestionModal(); 
+      renderQuestionsList(); 
+    }
+
+    // =========================================================================
+    // 8. FLUXO DO ALUNO (RESPONDER EM TEMPO REAL)
+    // =========================================================================
+    function renderQuizArea() {
+      let vQs = questions.filter(q => q.visible);
+      
+      if(vQs.length === 0) {
+        document.getElementById('noQuestionsNotice').classList.remove('hidden');
+        document.getElementById('activeQuizArea').classList.add('hidden');
+        document.getElementById('quizFinishedArea').classList.add('hidden');
+        return;
+      }
+      
+      document.getElementById('noQuestionsNotice').classList.add('hidden');
+      
+      // Se já estava concluído, não forçar voltar a não ser que queira
+      if (!document.getElementById('quizFinishedArea').classList.contains('hidden')) {
+        return;
+      }
+
+      document.getElementById('activeQuizArea').classList.remove('hidden');
+      
+      if (activeIndex >= vQs.length) activeIndex = Math.max(0, vQs.length - 1);
+      let q = vQs[activeIndex];
+      
+      document.getElementById('quizProgressText').innerText = `Questão ${activeIndex + 1} de ${vQs.length}`;
+      document.getElementById('progressBar').style.width = `${((activeIndex + 1) / vQs.length) * 100}%`;
+      document.getElementById('quizQuestionText').innerText = q.title;
+      
+      let optsHtml = '';
+      ['A','B','C','D'].forEach(l => {
+        let sel = selectedAnswers[q.id] === l;
+        optsHtml += `
+          <button onclick="selOpt(${q.id}, '${l}')" class="w-full text-left p-4 rounded-xl border-2 flex items-center space-x-4 transition-all transform hover:-translate-y-0.5 ${sel ? 'bg-indigo-600/30 border-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.2)]' : 'bg-slate-900 border-slate-700 hover:border-slate-500'}">
+            <span class="w-8 h-8 shrink-0 rounded-lg flex items-center justify-center text-sm font-bold ${sel ? 'bg-indigo-500 text-white shadow-lg' : 'bg-slate-800 text-slate-400'}">${l}</span>
+            <span class="text-[15px] ${sel ? 'text-white font-bold' : 'text-slate-300'}">${q.options[l]}</span>
+          </button>
+        `;
+      });
+      document.getElementById('optionsContainer').innerHTML = optsHtml;
+      
+      document.getElementById('prevBtn').disabled = activeIndex === 0;
+      
+      const nextBtn = document.getElementById('nextBtn');
+      if (activeIndex === vQs.length - 1) {
+        nextBtn.innerHTML = `Concluir <i class="fa-solid fa-flag-checkered ml-2"></i>`;
+        nextBtn.className = "px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-sm font-bold transition shadow-lg flex items-center shadow-emerald-500/30";
+      } else {
+        nextBtn.innerHTML = `Próxima <i class="fa-solid fa-arrow-right ml-2"></i>`;
+        nextBtn.className = "px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-bold transition shadow-lg flex items-center shadow-indigo-500/30";
+      }
+    }
+
+    function selOpt(qid, l) { 
+      selectedAnswers[qid] = l; 
+      renderQuizArea(); 
+    }
+
+    function prevQuestion() { 
+      if(activeIndex > 0) { 
+        activeIndex--; 
+        renderQuizArea(); 
+      } 
+    }
+    
+    function nextQuestion() {
+      let vQs = questions.filter(q => q.visible);
+      let currentQ = vQs[activeIndex];
+      
+      if (!selectedAnswers[currentQ.id]) return toast('Selecione uma alternativa antes de avançar!', true);
+
+      if(activeIndex < vQs.length - 1) { 
+        activeIndex++; 
+        renderQuizArea(); 
+      } else {
+        document.getElementById('activeQuizArea').classList.add('hidden');
+        document.getElementById('quizFinishedArea').classList.remove('hidden');
+      }
+    }
+
+    function submitAnswers() {
+      let fname = document.getElementById('studentFirstName').value.trim();
+      let lname = document.getElementById('studentLastName').value.trim();
+      
+      if(!fname || !lname) {
+        toast('Por favor, preencha seu Nome e Sobrenome no topo!', true);
+        document.getElementById('studentFirstName').focus();
+        return;
+      }
+
+      const btnSubmit = document.getElementById('btnSubmitFinal');
+      btnSubmit.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin mr-2"></i> Enviando...`;
+      btnSubmit.disabled = true;
+
+      // Calcular Pontuação
+      let vQs = questions.filter(q => q.visible);
+      let score = 0;
+      let ansLog = {};
+      
+      vQs.forEach(q => {
+        const studentAns = selectedAnswers[q.id] || '-';
+        ansLog[q.id] = studentAns;
+        if (studentAns === q.correct) score++;
+      });
+
+      const payload = { 
+        date: new Date().toLocaleString('pt-BR'), 
+        nome: fname, 
+        sobrenome: lname,
+        acertos: `${score}/${vQs.length}`,
+        respostas: ansLog 
+      };
+
+      // 1. Gravar em Tempo Real no Firebase
+      if (db) {
+        db.ref('quiz/responses').push(payload);
+      } else {
+        // Fallback local caso Firebase esteja desativado
+        responses.push(payload);
+        localStorage.setItem(APP_KEYS.RES, JSON.stringify(responses));
+      }
+      
+      // 2. Disparar simultaneamente para Google Sheets (se configurado)
+      if (sheetsApiUrl && sheetsApiUrl.startsWith('http')) {
+        fetch(sheetsApiUrl, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        }).then(() => {
+          finalizeSubmission();
+        }).catch(err => {
+          console.error("Erro Google Sheets:", err);
+          finalizeSubmission(true);
+        });
+      } else {
+        finalizeSubmission();
+      }
+    }
+
+    function finalizeSubmission(hadNetworkError = false) {
+      toast(hadNetworkError ? 'Enviado para a nuvem!' : 'Avaliação submetida com sucesso!');
+      selectedAnswers = {}; 
+      activeIndex = 0;
+      document.getElementById('studentFirstName').value = '';
+      document.getElementById('studentLastName').value = '';
+      
+      const btnSubmit = document.getElementById('btnSubmitFinal');
+      btnSubmit.innerHTML = `<i class="fa-solid fa-paper-plane mr-2"></i> Enviar Avaliação`;
+      btnSubmit.disabled = false;
+
+      document.getElementById('quizFinishedArea').classList.add('hidden');
+      renderQuizArea(); 
+      window.scrollTo(0,0);
+    }
+
+    // =========================================================================
+    // 9. DADOS E PLANILHA (ADMIN)
+    // =========================================================================
+    function renderResponsesTable() {
+      let head = document.getElementById('tableHeader');
+      let body = document.getElementById('tableBody');
+      if (!head || !body) return;
+      
+      let theadHtml = `
+        <th class="p-3 text-left w-32 border-r border-slate-700">Data</th>
+        <th class="p-3 text-left border-r border-slate-700">Nome</th>
+        <th class="p-3 text-left border-r border-slate-700">Sobrenome</th>
+        <th class="p-3 text-center border-r border-slate-700 text-emerald-400"><i class="fa-solid fa-bullseye"></i> Acertos</th>
+      `;
+      questions.forEach((q,i) => theadHtml += `<th class="p-3 text-center" title="Correta: ${q.correct || '?'}">Q${i+1}</th>`);
+      head.innerHTML = theadHtml;
+      
+      body.innerHTML = '';
+      if(responses.length === 0) {
+        body.innerHTML = `<tr><td colspan="${questions.length+4}" class="p-8 text-center text-slate-500 italic">Nenhuma resposta recebida ainda.</td></tr>`;
+        return;
+      }
+      
+      [...responses].reverse().forEach(r => {
+        let tr = `
+          <tr class="hover:bg-slate-800/50 transition-colors">
+            <td class="p-3 text-[11px] font-mono text-slate-400 border-r border-slate-700/50">${r.date}</td>
+            <td class="p-3 font-bold text-white border-r border-slate-700/50">${r.nome}</td>
+            <td class="p-3 font-bold text-white border-r border-slate-700/50">${r.sobrenome}</td>
+            <td class="p-3 text-center font-black text-emerald-400 bg-emerald-950/20 border-r border-slate-700/50">${r.acertos || '-'}</td>
+        `;
+        
+        questions.forEach(q => {
+          let a = r.respostas ? r.respostas[q.id] : '-';
+          let isCorrect = a === q.correct;
+          let badge = '';
+          if (a && a !== '-') {
+            badge = isCorrect ? 'bg-emerald-600 text-white' : 'bg-rose-900/80 text-rose-300 border border-rose-700/50';
+          } else {
+            badge = 'bg-slate-800 text-slate-600';
+          }
+          tr += `<td class="p-3 text-center"><span class="inline-flex items-center justify-center w-7 h-7 rounded text-xs font-bold ${badge}">${a || '-'}</span></td>`;
+        });
+        tr += `</tr>`;
+        body.innerHTML += tr;
+      });
+    }
+
+    function clearResponses() {
+      if(confirm('Tem certeza? Isso apagará todas as respostas registradas tanto localmente quanto na nuvem.')) { 
+        responses = []; 
+        localStorage.setItem(APP_KEYS.RES, '[]'); 
+        if (db) db.ref('quiz/responses').remove();
+        renderResponsesTable(); 
+        toast('Base de dados limpa com sucesso.');
+      }
+    }
+    
+    function exportCSV() {
+      if (responses.length === 0) return toast('Planilha Vazia!', true);
+
+      let csv = "Data,Nome,Sobrenome,Acertos," + questions.map((q,i) => `Questao_${i+1}`).join(",") + "\n";
+      
+      responses.forEach(r => {
+        let safeF = (r.nome || '').replace(/,/g, " ");
+        let safeL = (r.sobrenome || '').replace(/,/g, " ");
+        csv += `"${r.date}","${safeF}","${safeL}","${r.acertos}",` + questions.map(q => `"${(r.respostas && r.respostas[q.id]) || '-'}"`).join(",") + "\n";
+      });
+      
+      const blob = new Blob(["\uFEFF" + csv], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `Resultados_${lessonTitle.replace(/ /g,"_")}.csv`; 
+      link.click();
+      URL.revokeObjectURL(link.href);
+    }
+  </script>
+</body>
+</html>

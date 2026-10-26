@@ -1,0 +1,37 @@
+﻿{
+    "questions":  [
+                      {
+                          "title":  "Qual é a capital do Brasil?",
+                          "correct":  "C",
+                          "id":  1,
+                          "visible":  true,
+                          "options":  {
+                                          "A":  "Rio de Janeiro",
+                                          "B":  "São Paulo",
+                                          "C":  "Brasília",
+                                          "D":  "Salvador"
+                                      }
+                      },
+                      {
+                          "id":  1792779219894,
+                          "title":  "Quanto é 5x5",
+                          "visible":  true,
+                          "options":  {
+                                          "A":  "25",
+                                          "B":  "10",
+                                          "C":  "20",
+                                          "D":  "4"
+                                      },
+                          "correct":  "A"
+                      }
+                  ],
+    "responses":  [
+
+                  ],
+    "settings":  {
+                     "backgroundUrl":  "",
+                     "lessonTitle":  "Simulado Geral",
+                     "allowSubmission":  false,
+                     "adminPassword":  "cp2026"
+                 }
+}

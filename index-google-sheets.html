@@ -1,0 +1,1217 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Questionário Interativo - Sincronizado via Google Planilhas</title>
+  
+  <!-- Tailwind CSS & FontAwesome (Sem dependência de Firebase!) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+
+  <style>
+    /* Estilo Glassmorphism Premium */
+    body { margin: 0; padding: 0; color: #f1f5f9; font-family: ui-sans-serif, system-ui, sans-serif; overflow-x: hidden; }
+    .glass-panel {
+      background: rgba(15, 23, 42, 0.78);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.7);
+    }
+    .hide-scrollbar::-webkit-scrollbar { display: none; }
+    .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    input:focus, textarea:focus, select:focus { outline: none; box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.5); border-color: #4f46e5; }
+    
+    #app-bg {
+      background-color: #020617;
+      background-size: cover;
+      background-position: center;
+      background-attachment: fixed;
+    }
+
+    @keyframes pulse-soft {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.65; transform: scale(0.97); }
+    }
+    .live-pulse {
+      animation: pulse-soft 2.2s infinite ease-in-out;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+  <!-- Camada de Fundo Dinâmico e Overlay -->
+  <div id="app-bg" class="fixed inset-0 z-[-2] transition-all duration-1000"></div>
+  <div class="fixed inset-0 z-[-1] bg-slate-950/80 backdrop-blur-sm"></div>
+
+  <!-- Header Fixo -->
+  <header class="glass-panel border-b-0 sticky top-0 z-40 shadow-xl border-b border-white/5">
+    <div class="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
+      
+      <!-- Logo + Título + Status da Planilha -->
+      <div class="flex items-center space-x-3">
+        <div class="p-2 bg-emerald-600 rounded-lg shadow-[0_0_15px_rgba(16,185,129,0.3)]">
+          <i class="fa-solid fa-graduation-cap text-white text-lg w-5 text-center"></i>
+        </div>
+        <div>
+          <div class="flex items-center space-x-2">
+            <h1 id="headerLessonTitle" class="font-bold text-sm sm:text-lg text-white truncate max-w-[120px] sm:max-w-xs">Simulado Geral</h1>
+            <!-- Badge de Status de Sincronização -->
+            <span id="badgeConnection" class="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-950/60 text-emerald-400 border border-emerald-500/30">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse mr-1"></span> Google Sheets
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Menu de Abas -->
+      <nav class="flex space-x-1 sm:space-x-2 bg-slate-950/50 p-1 rounded-xl border border-slate-700/50">
+        <button onclick="switchTab('responder')" id="tabBtn-responder" class="px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all bg-indigo-600 text-white shadow">
+          <i class="fa-solid fa-pen-nib"></i> <span class="hidden sm:inline ml-1">Responder</span>
+        </button>
+        <button onclick="switchTab('perguntas')" id="tabBtn-perguntas" class="px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-xs sm:text-sm font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition-all">
+          <i class="fa-solid fa-lock" id="icon-lock-perguntas"></i> <span class="hidden sm:inline ml-1">Painel</span>
+        </button>
+        <button onclick="switchTab('respostas')" id="tabBtn-respostas" class="px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-xs sm:text-sm font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition-all">
+          <i class="fa-solid fa-lock" id="icon-lock-respostas"></i> <span class="hidden sm:inline ml-1">Dados</span>
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Notificações Toast -->
+  <div id="toast" class="fixed bottom-4 right-4 z-50 transform translate-y-24 opacity-0 transition-all duration-300 flex items-center space-x-3 bg-slate-800 text-white px-5 py-3 rounded-xl border border-slate-700 shadow-2xl">
+    <i id="toastIcon" class="fa-solid fa-circle-check text-emerald-400 text-lg"></i>
+    <span id="toastMsg" class="text-sm font-medium">Ação concluída!</span>
+  </div>
+
+  <main class="flex-1 max-w-6xl w-full mx-auto p-4 sm:p-6 pb-24">
+
+    <!-- =====================================
+         ABA 1: RESPONDER (Visão do Aluno)
+         ===================================== -->
+    <section id="tab-responder" class="tab-content max-w-2xl mx-auto space-y-6">
+      
+      <!-- Card Identificação -->
+      <div class="glass-panel p-5 sm:p-6 rounded-2xl border border-indigo-500/20 shadow-[0_0_20px_rgba(79,70,229,0.1)]">
+        <h2 class="text-lg font-bold text-white mb-4 flex items-center"><i class="fa-solid fa-user-astronaut text-indigo-400 mr-2"></i> Identificação</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-1">Nome</label>
+            <input type="text" id="studentFirstName" placeholder="Ex: João" class="w-full bg-slate-900/80 border border-slate-700 rounded-xl px-4 py-3 text-white transition-colors">
+          </div>
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-1">Sobrenome</label>
+            <input type="text" id="studentLastName" placeholder="Ex: Silva" class="w-full bg-slate-900/80 border border-slate-700 rounded-xl px-4 py-3 text-white transition-colors">
+          </div>
+        </div>
+      </div>
+
+      <!-- Card do Quiz -->
+      <div class="glass-panel p-5 sm:p-8 rounded-2xl relative overflow-hidden">
+        
+        <!-- Tela de Espera Dinâmica (Atualiza automaticamente pela planilha) -->
+        <div id="noQuestionsNotice" class="hidden text-center py-12 space-y-4">
+          <div class="inline-flex p-4 bg-slate-800/80 text-emerald-400 rounded-full border border-slate-700 shadow-inner live-pulse">
+            <i class="fa-solid fa-satellite-dish text-3xl"></i>
+          </div>
+          <h3 class="text-xl font-bold text-white">Aguardando Liberação pelo Professor</h3>
+          <p class="text-slate-400 text-sm max-w-sm mx-auto">Esta página verifica a Planilha Google a cada 3 segundos. Assim que o professor liberar a questão, ela abrirá aqui na hora!</p>
+          <div class="pt-2 flex justify-center gap-2">
+            <button onclick="syncFromGoogleSheets(true)" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-lg border border-slate-700 transition">
+              <i class="fa-solid fa-arrows-rotate mr-1"></i> Verificar Agora
+            </button>
+          </div>
+        </div>
+
+        <!-- Área de Questões Ativas -->
+        <div id="activeQuizArea" class="space-y-6">
+          <div class="flex items-center justify-between border-b border-slate-800 pb-4">
+            <span class="text-xs font-bold text-indigo-400 uppercase tracking-widest bg-indigo-900/30 px-3 py-1 rounded-full border border-indigo-500/30" id="quizProgressText">0 de 0</span>
+            <div class="w-32 bg-slate-800 h-2 rounded-full overflow-hidden border border-slate-700">
+              <div id="progressBar" class="bg-indigo-500 h-full w-0 transition-all duration-500 shadow-[0_0_8px_rgba(79,70,229,0.6)]"></div>
+            </div>
+          </div>
+          
+          <div class="min-h-[80px] flex items-center">
+            <p id="quizQuestionText" class="text-lg sm:text-2xl font-medium text-white leading-relaxed">...</p>
+          </div>
+          
+          <div class="space-y-3 pt-2" id="optionsContainer"></div>
+          
+          <div class="flex justify-between items-center pt-6 border-t border-slate-800">
+            <button onclick="prevQuestion()" id="prevBtn" class="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-sm font-semibold disabled:opacity-30 disabled:cursor-not-allowed transition-colors border border-slate-700">
+              <i class="fa-solid fa-arrow-left mr-1"></i> Voltar
+            </button>
+            <button onclick="nextQuestion()" id="nextBtn" class="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-bold transition shadow-lg shadow-indigo-500/20 flex items-center">
+              Próxima <i class="fa-solid fa-arrow-right ml-2"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Tela Final (Pronto para enviar) -->
+        <div id="quizFinishedArea" class="hidden text-center py-12 space-y-5">
+          <div class="inline-flex p-5 bg-emerald-900/30 text-emerald-400 rounded-full border border-emerald-500/30 mb-2 shadow-[0_0_30px_rgba(16,185,129,0.2)]">
+            <i class="fa-solid fa-flag-checkered text-4xl"></i>
+          </div>
+          <h3 class="text-2xl font-bold text-white">Você concluiu!</h3>
+          <p class="text-slate-400 text-sm mb-6 max-w-sm mx-auto">Confira se o seu Nome e Sobrenome estão corretos acima e clique abaixo para registrar suas respostas diretamente na Planilha Google do professor.</p>
+          <button onclick="submitAnswers()" id="btnSubmitFinal" class="w-full sm:w-auto px-8 py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow-[0_0_15px_rgba(16,185,129,0.3)] transition transform hover:-translate-y-1">
+            <i class="fa-solid fa-paper-plane mr-2"></i> Enviar Avaliação
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- =====================================
+         ABA 2: PAINEL ADMINISTRATIVO (Professor)
+         ===================================== -->
+    <section id="tab-perguntas" class="tab-content hidden space-y-6">
+      
+      <!-- CARD DE CONEXÃO DIRETA COM GOOGLE SHEETS -->
+      <div class="glass-panel p-5 rounded-2xl border-l-4 border-l-emerald-500 space-y-3">
+        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+          <div>
+            <div class="flex items-center space-x-2">
+              <span id="sheetsIndicatorDot" class="w-3 h-3 rounded-full bg-emerald-400 animate-pulse"></span>
+              <h3 class="text-sm font-bold text-white uppercase tracking-wider">Conexão Google Planilhas (Sem Firebase)</h3>
+            </div>
+            <p class="text-xs text-slate-300 mt-1">Todas as perguntas, configurações e notas dos alunos ficam 100% gravadas na sua Planilha Google.</p>
+          </div>
+          <div class="flex gap-2">
+            <button onclick="openScriptModal()" class="px-3 py-1.5 bg-emerald-900/50 hover:bg-emerald-800 text-emerald-300 border border-emerald-500/50 rounded-xl text-xs font-bold transition flex items-center">
+              <i class="fa-solid fa-code mr-1.5"></i> Ver Script do Google
+            </button>
+            <button onclick="syncFromGoogleSheets(true)" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold transition flex items-center">
+              <i class="fa-solid fa-arrows-rotate mr-1"></i> Sincronizar
+            </button>
+          </div>
+        </div>
+        
+        <div class="pt-2 flex flex-col sm:flex-row gap-2">
+          <input type="text" id="sheetsAppUrlInput" placeholder="https://script.google.com/macros/s/.../exec" class="flex-1 bg-slate-900/80 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-xs sm:text-sm font-mono">
+          <button onclick="saveSheetsUrl()" class="bg-emerald-600 hover:bg-emerald-500 px-5 py-2.5 rounded-xl text-white font-bold text-xs sm:text-sm transition shrink-0 flex items-center justify-center">
+            <i class="fa-solid fa-link mr-1.5"></i> Conectar Planilha
+          </button>
+        </div>
+      </div>
+
+      <!-- GRID DE CONFIGURAÇÕES RÁPIDAS -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="glass-panel p-5 rounded-2xl space-y-3">
+          <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider"><i class="fa-solid fa-chalkboard-user mr-1 text-indigo-400"></i> Título da Aula (Sincronizado)</label>
+          <div class="flex space-x-2">
+            <input type="text" id="lessonTitleInput" class="w-full bg-slate-900/80 border border-slate-700 rounded-xl px-4 py-2 text-white text-sm">
+            <button onclick="saveSettings('title')" class="bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded-xl text-white font-bold text-sm transition shrink-0"><i class="fa-solid fa-save"></i></button>
+          </div>
+        </div>
+        <div class="glass-panel p-5 rounded-2xl space-y-3">
+          <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider"><i class="fa-solid fa-key mr-1 text-amber-400"></i> Senha do Painel (Mestre)</label>
+          <div class="flex space-x-2">
+            <input type="password" id="newAdminPassword" placeholder="Nova senha..." class="w-full bg-slate-900/80 border border-slate-700 rounded-xl px-4 py-2 text-white text-sm">
+            <button onclick="saveSettings('password')" class="bg-slate-700 hover:bg-slate-600 border border-slate-600 px-4 py-2 rounded-xl text-white font-bold text-sm transition shrink-0"><i class="fa-solid fa-save"></i></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Personalização de Fundo -->
+      <div class="glass-panel p-5 rounded-2xl space-y-3 border-l-4 border-l-pink-500">
+        <label class="block text-xs font-bold text-slate-300 uppercase tracking-wider"><i class="fa-brands fa-google-drive mr-1 text-pink-400"></i> Imagem de Fundo (Link do Google Drive)</label>
+        <p class="text-xs text-slate-400">Cole o link de visualização de uma imagem do seu Drive para mudar o fundo de todos os alunos.</p>
+        <div class="flex space-x-2">
+          <input type="text" id="driveBgUrl" placeholder="https://drive.google.com/file/d/.../view" class="w-full bg-slate-900/80 border border-slate-700 rounded-xl px-4 py-2 text-white text-xs sm:text-sm">
+          <button onclick="saveSettings('background')" class="bg-pink-600 hover:bg-pink-500 px-4 py-2 rounded-xl text-white font-bold text-sm transition shrink-0">Aplicar</button>
+        </div>
+      </div>
+
+      <!-- BANCO DE PERGUNTAS -->
+      <div class="glass-panel p-5 sm:p-6 rounded-2xl space-y-6">
+        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-700 pb-5">
+          <div>
+            <div class="flex items-center space-x-2">
+              <h2 class="text-xl font-bold text-white">Banco de Questões</h2>
+              <span class="text-xs bg-emerald-900/50 text-emerald-300 px-2.5 py-0.5 rounded-full border border-emerald-500/30">Planilha Google</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">Ao clicar em "Liberar", a questão é salva na planilha e surge na tela dos alunos em até 3 segundos.</p>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <button onclick="setAllQuestionsStatus(true)" class="px-3 py-2 bg-indigo-900/30 text-indigo-300 border border-indigo-700/50 rounded-lg text-xs font-bold hover:bg-indigo-800/40 transition">
+              <i class="fa-solid fa-eye mr-1"></i> Liberar Todas
+            </button>
+            <button onclick="setAllQuestionsStatus(false)" class="px-3 py-2 bg-slate-800 text-slate-400 border border-slate-700 rounded-lg text-xs font-bold hover:bg-slate-700 transition">
+              <i class="fa-solid fa-eye-slash mr-1"></i> Ocultar Todas
+            </button>
+            <button onclick="openQuestionModal()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold shadow-lg transition">
+              <i class="fa-solid fa-plus mr-1"></i> Nova Questão
+            </button>
+          </div>
+        </div>
+
+        <div id="questionsList" class="space-y-4">
+          <!-- Renderizado via JS -->
+        </div>
+      </div>
+    </section>
+
+    <!-- =====================================
+         ABA 3: DADOS / PLANILHA (Professor)
+         ===================================== -->
+    <section id="tab-respostas" class="tab-content hidden space-y-6">
+      
+      <div class="glass-panel p-5 sm:p-6 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h2 class="text-lg font-bold text-white flex items-center space-x-2">
+            <div class="p-2 bg-emerald-900/50 rounded-lg border border-emerald-500/30"><i class="fa-solid fa-file-excel text-emerald-400"></i></div>
+            <span>Respostas da Planilha Google</span>
+          </h2>
+          <p class="text-xs text-slate-400 mt-1">Os envios dos alunos caem na aba "Respostas" da sua planilha em tempo real.</p>
+        </div>
+        <div class="space-x-2 flex w-full sm:w-auto">
+          <button onclick="fetchResponsesFromSheets()" class="flex-1 sm:flex-none px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-700 rounded-xl text-xs font-bold transition flex items-center justify-center">
+            <i class="fa-solid fa-rotate mr-2"></i> Recarregar Dados
+          </button>
+          <button onclick="clearResponses()" class="flex-1 sm:flex-none px-4 py-2.5 bg-rose-900/30 hover:bg-rose-900/50 text-rose-400 border border-rose-700/50 rounded-xl text-xs font-bold transition flex items-center justify-center">
+            <i class="fa-solid fa-trash-can mr-2"></i> Limpar Tudo
+          </button>
+          <button onclick="exportCSV()" class="flex-1 sm:flex-none px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-lg transition flex items-center justify-center">
+            <i class="fa-solid fa-download mr-2"></i> Baixar CSV
+          </button>
+        </div>
+      </div>
+
+      <div class="glass-panel rounded-2xl overflow-x-auto shadow-2xl border border-slate-700">
+        <table class="w-full text-left text-sm whitespace-nowrap">
+          <thead class="bg-slate-900/90 text-[10px] sm:text-xs uppercase text-slate-400 border-b border-slate-700 tracking-wider">
+            <tr id="tableHeader">
+              <!-- Renderizado via JS -->
+            </tr>
+          </thead>
+          <tbody id="tableBody" class="divide-y divide-slate-800/80 text-slate-300 bg-slate-900/30">
+            <!-- Renderizado via JS -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- =====================================
+       MODAIS E OVERLAYS
+       ===================================== -->
+       
+  <!-- Modal de Autenticação (Senha) -->
+  <div id="authModal" class="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-md hidden flex items-center justify-center p-4 transition-opacity">
+    <div class="bg-slate-900 border border-slate-700 max-w-sm w-full rounded-3xl p-8 shadow-2xl text-center">
+      <div class="mx-auto w-16 h-16 bg-indigo-900/30 text-indigo-400 rounded-full flex items-center justify-center mb-4 text-2xl border border-indigo-500/20">
+        <i class="fa-solid fa-lock"></i>
+      </div>
+      <h3 class="text-xl font-bold text-white mb-2">Painel do Professor</h3>
+      <p class="text-sm text-slate-400 mb-6">Insira a senha mestra para gerenciar o sistema.</p>
+      
+      <input type="password" id="adminPassword" placeholder="••••••••" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-white text-center text-xl tracking-widest mb-6 focus:border-indigo-500 transition-colors">
+      
+      <div class="flex justify-between space-x-3">
+        <button onclick="cancelAuth()" class="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-sm font-bold transition border border-slate-700">Voltar</button>
+        <button onclick="verifyPassword()" class="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-bold shadow-lg transition">Desbloquear</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Código Google Apps Script -->
+  <div id="scriptModal" class="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 max-w-2xl w-full rounded-2xl p-6 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div class="flex justify-between items-center mb-4 border-b border-slate-800 pb-3">
+        <h3 class="text-lg font-bold text-white flex items-center"><i class="fa-solid fa-code text-emerald-400 mr-2"></i> Código do Google Apps Script</h3>
+        <button onclick="closeScriptModal()" class="text-slate-500 hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
+      </div>
+      
+      <div class="text-xs text-slate-300 mb-3 space-y-1">
+        <p>1. Crie uma Planilha no Google (<a href="https://sheets.new" target="_blank" class="text-emerald-400 underline font-bold">sheets.new</a>) e vá em <strong>Extensões > Apps Script</strong>.</p>
+        <p>2. Substitua o código pelo script abaixo e clique em <strong>Salvar</strong>.</p>
+        <p>3. Clique em <strong>Implantar > Nova Implantação</strong> > Selecione <strong>App da Web</strong>:</p>
+        <p class="text-amber-300 pl-3">↳ <em>Executar como:</em> <strong>Eu</strong> | <em>Quem tem acesso:</em> <strong>Qualquer pessoa</strong></p>
+        <p>4. Copie a URL gerada e cole no campo "Conectar Planilha".</p>
+      </div>
+      
+      <div class="relative flex-1 overflow-y-auto bg-slate-950 rounded-xl border border-slate-800 p-4">
+        <button onclick="copyScriptCode()" class="absolute top-2 right-2 bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg text-[10px] font-bold border border-slate-600 uppercase flex items-center transition">
+          <i class="fa-regular fa-copy mr-1"></i> Copiar Código
+        </button>
+        <pre class="text-[11px] text-emerald-400 font-mono whitespace-pre-wrap leading-relaxed" id="scriptCodeText">
+function doGet(e) {
+  var action = (e && e.parameter && e.parameter.action) || 'getData';
+  var callback = e && e.parameter && e.parameter.callback;
+  var responseData = {};
+  
+  if (action === 'getResponses') {
+    responseData = { result: "success", responses: getResponsesFromSheet() };
+  } else {
+    responseData = {
+      result: "success",
+      settings: getSettings(),
+      questions: getQuestionsFromSheet()
+    };
+  }
+  
+  var jsonString = JSON.stringify(responseData);
+  if (callback) {
+    return ContentService.createTextOutput(callback + '(' + jsonString + ');').setMimeType(ContentService.MimeType.JAVASCRIPT);
+  }
+  return ContentService.createTextOutput(jsonString).setMimeType(ContentService.MimeType.JSON);
+}
+
+function doPost(e) {
+  try {
+    var data = JSON.parse(e.postData.contents);
+    var action = data.action || 'submitResponse';
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    
+    if (action === 'saveQuestions') {
+      if (data.questions) saveQuestionsToSheet(data.questions);
+      if (data.settings) saveSettings(data.settings);
+      return ContentService.createTextOutput(JSON.stringify({result:"success"})).setMimeType(ContentService.MimeType.JSON);
+    }
+    if (action === 'saveSettings') {
+      saveSettings(data.settings);
+      return ContentService.createTextOutput(JSON.stringify({result:"success"})).setMimeType(ContentService.MimeType.JSON);
+    }
+    if (action === 'clearResponses') {
+      clearResponsesSheet();
+      return ContentService.createTextOutput(JSON.stringify({result:"success"})).setMimeType(ContentService.MimeType.JSON);
+    }
+    
+    var sheet = getOrCreateSheet(ss, "Respostas");
+    sheet.appendRow([
+      data.date || new Date().toLocaleString('pt-BR'),
+      data.nome || '',
+      data.sobrenome || '',
+      data.acertos || '0',
+      JSON.stringify(data.respostas || {})
+    ]);
+    return ContentService.createTextOutput(JSON.stringify({result:"success"})).setMimeType(ContentService.MimeType.JSON);
+  } catch(err) {
+    return ContentService.createTextOutput(JSON.stringify({result:"error", error: err.message})).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function getOrCreateSheet(ss, name) {
+  var sheet = ss.getSheetByName(name);
+  if (!sheet) {
+    sheet = ss.insertSheet(name);
+    if (name === "Respostas") {
+      sheet.appendRow(["Data", "Nome", "Sobrenome", "Acertos", "JSON Respostas"]);
+      sheet.getRange(1, 1, 1, 5).setFontWeight("bold").setBackground("#dcfce7");
+    } else if (name === "Perguntas") {
+      sheet.appendRow(["ID", "Enunciado", "Opcao_A", "Opcao_B", "Opcao_C", "Opcao_D", "Gabarito", "Liberada"]);
+      sheet.getRange(1, 1, 1, 8).setFontWeight("bold").setBackground("#e0e7ff");
+    }
+  }
+  return sheet;
+}
+
+function getSettings() {
+  var props = PropertiesService.getScriptProperties();
+  return {
+    lessonTitle: props.getProperty("LESSON_TITLE") || "Simulado Geral",
+    backgroundDriveUrl: props.getProperty("BG_URL") || ""
+  };
+}
+
+function saveSettings(settings) {
+  if (!settings) return;
+  var props = PropertiesService.getScriptProperties();
+  if (settings.lessonTitle) props.setProperty("LESSON_TITLE", settings.lessonTitle);
+  if (settings.backgroundDriveUrl !== undefined) props.setProperty("BG_URL", settings.backgroundDriveUrl);
+}
+
+function getQuestionsFromSheet() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = getOrCreateSheet(ss, "Perguntas");
+  var values = sheet.getDataRange().getValues();
+  var questions = [];
+  
+  for (var i = 1; i < values.length; i++) {
+    var row = values[i];
+    if (!row[0] && !row[1]) continue;
+    var visVal = String(row[7]).toLowerCase().trim();
+    questions.push({
+      id: Number(row[0]) || (Date.now() + i),
+      title: String(row[1] || ''),
+      options: { A: String(row[2] || ''), B: String(row[3] || ''), C: String(row[4] || ''), D: String(row[5] || '') },
+      correct: String(row[6] || 'A').trim().toUpperCase(),
+      visible: (visVal === 'true' || visVal === 'sim' || row[7] === true || visVal === '1')
+    });
+  }
+  if (questions.length === 0) {
+    var defaultQ = { id: 1, title: "Qual é a capital do Brasil?", options: { A: "Rio de Janeiro", B: "São Paulo", C: "Brasília", D: "Salvador" }, correct: "C", visible: true };
+    saveQuestionsToSheet([defaultQ]);
+    return [defaultQ];
+  }
+  return questions;
+}
+
+function saveQuestionsToSheet(questions) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = getOrCreateSheet(ss, "Perguntas");
+  var lastRow = sheet.getLastRow();
+  if (lastRow > 1) sheet.getRange(2, 1, lastRow - 1, 8).clearContent();
+  if (!questions || questions.length === 0) return;
+  
+  var rows = questions.map(function(q) {
+    return [q.id, q.title, q.options ? q.options.A : '', q.options ? q.options.B : '', q.options ? q.options.C : '', q.options ? q.options.D : '', q.correct || 'A', q.visible ? 'TRUE' : 'FALSE'];
+  });
+  sheet.getRange(2, 1, rows.length, 8).setValues(rows);
+}
+
+function getResponsesFromSheet() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = getOrCreateSheet(ss, "Respostas");
+  var values = sheet.getDataRange().getValues();
+  var list = [];
+  for (var i = 1; i < values.length; i++) {
+    var row = values[i];
+    if (!row[0] && !row[1]) continue;
+    var respObj = {};
+    try { respObj = JSON.parse(row[4]); } catch(e) {}
+    list.push({ date: String(row[0]), nome: String(row[1]), sobrenome: String(row[2]), acertos: String(row[3]), respostas: respObj });
+  }
+  return list;
+}
+
+function clearResponsesSheet() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = getOrCreateSheet(ss, "Respostas");
+  var lastRow = sheet.getLastRow();
+  if (lastRow > 1) sheet.getRange(2, 1, lastRow - 1, 5).clearContent();
+}</pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Pergunta (Nova / Editar) -->
+  <div id="questionModal" class="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 max-w-lg w-full rounded-3xl p-6 shadow-2xl">
+      <div class="flex justify-between items-center mb-5 border-b border-slate-800 pb-3">
+        <h3 id="modalTitle" class="text-lg font-bold text-white">Nova Pergunta</h3>
+        <button onclick="closeQuestionModal()" class="text-slate-500 hover:text-white transition w-8 h-8 rounded-lg flex items-center justify-center bg-slate-800"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      
+      <div class="space-y-4">
+        <div>
+          <label class="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Enunciado da Questão</label>
+          <textarea id="modalQuestionText" placeholder="Ex: Quanto é 2 + 2?" rows="3" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-white text-sm transition-colors resize-none"></textarea>
+        </div>
+        
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+          <div><label class="block text-[10px] font-bold text-indigo-400 mb-1">Alternativa A</label><input type="text" id="modalOptA" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white transition-colors"></div>
+          <div><label class="block text-[10px] font-bold text-indigo-400 mb-1">Alternativa B</label><input type="text" id="modalOptB" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white transition-colors"></div>
+          <div><label class="block text-[10px] font-bold text-indigo-400 mb-1">Alternativa C</label><input type="text" id="modalOptC" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white transition-colors"></div>
+          <div><label class="block text-[10px] font-bold text-indigo-400 mb-1">Alternativa D</label><input type="text" id="modalOptD" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white transition-colors"></div>
+        </div>
+
+        <!-- Gabarito -->
+        <div class="pt-2">
+          <label class="block text-[11px] font-bold text-emerald-400 uppercase tracking-wider mb-2"><i class="fa-solid fa-bullseye mr-1"></i> Gabarito (Opção Correta)</label>
+          <select id="modalCorrectOption" class="w-full bg-slate-950 border border-emerald-500/50 text-white text-sm rounded-xl px-3 py-2.5 cursor-pointer hover:border-emerald-500 transition-colors appearance-none">
+            <option value="A">Alternativa A</option>
+            <option value="B">Alternativa B</option>
+            <option value="C">Alternativa C</option>
+            <option value="D">Alternativa D</option>
+          </select>
+        </div>
+      </div>
+      
+      <div class="flex justify-end space-x-3 mt-6 pt-4 border-t border-slate-800">
+        <button onclick="closeQuestionModal()" class="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-sm font-semibold transition">Cancelar</button>
+        <button onclick="saveQuestion()" class="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-sm font-bold shadow-lg transition"><i class="fa-solid fa-check mr-2"></i> Salvar na Planilha</button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- =====================================
+       LÓGICA JAVASCRIPT (MOTOR GOOGLE SHEETS)
+       ===================================== -->
+  <script>
+    // =========================================================================
+    // 1. CONFIGURAÇÃO DA PLANILHA GOOGLE
+    // =========================================================================
+    // DICA: Cole a URL do seu Apps Script aqui para ficar pré-configurado para todos os alunos!
+    const DEFAULT_SHEETS_URL = "";
+
+    const APP_KEYS = {
+      TITLE: 'gsites_sheets_title_v1',
+      QS: 'gsites_sheets_qs_v1',
+      RES: 'gsites_sheets_res_v1',
+      PWD: 'gsites_sheets_pwd_v1',
+      BG_URL: 'gsites_sheets_bg_v1',
+      SHEETS_URL: 'gsites_sheets_url_v1'
+    };
+
+    let sheetsUrl = localStorage.getItem(APP_KEYS.SHEETS_URL) || DEFAULT_SHEETS_URL;
+    let adminPwd = localStorage.getItem(APP_KEYS.PWD) || 'prof123';
+    let isAdminAuthenticated = false;
+    let pendingTab = null;
+
+    let lessonTitle = localStorage.getItem(APP_KEYS.TITLE) || 'Simulado Geral';
+    let backgroundDriveUrl = localStorage.getItem(APP_KEYS.BG_URL) || '';
+    
+    let questions = JSON.parse(localStorage.getItem(APP_KEYS.QS)) || [
+      { id: 1, title: "Qual é a capital do Brasil?", visible: true, options: { A: "Rio de Janeiro", B: "São Paulo", C: "Brasília", D: "Salvador" }, correct: "C" },
+    ];
+    let responses = JSON.parse(localStorage.getItem(APP_KEYS.RES)) || [];
+    
+    let activeIndex = 0;
+    let selectedAnswers = {};
+    let editId = null;
+    let lastVisibleQuestionCount = -1;
+    let pollingTimer = null;
+
+    // =========================================================================
+    // 2. INICIALIZAÇÃO
+    // =========================================================================
+    document.addEventListener("DOMContentLoaded", () => {
+      document.getElementById('headerLessonTitle').innerText = lessonTitle;
+      document.getElementById('lessonTitleInput').value = lessonTitle;
+      document.getElementById('driveBgUrl').value = backgroundDriveUrl;
+      document.getElementById('sheetsAppUrlInput').value = sheetsUrl;
+      
+      applyBackground(backgroundDriveUrl);
+      renderQuestionsList();
+      renderQuizArea();
+      renderResponsesTable();
+      updateStatusBadge();
+
+      // Inicia a sincronização periódica (polling a cada 3.5 segundos)
+      startSmartPolling();
+
+      document.getElementById('adminPassword').addEventListener('keypress', (e) => { if (e.key === 'Enter') verifyPassword(); });
+      document.getElementById('newAdminPassword').addEventListener('keypress', (e) => { if (e.key === 'Enter') saveSettings('password'); });
+    });
+
+    // =========================================================================
+    // 3. MOTOR DE SINCRONIZAÇÃO VIA GOOGLE SHEETS (SEM FIREBASE)
+    // =========================================================================
+    function startSmartPolling() {
+      if (pollingTimer) clearInterval(pollingTimer);
+      syncFromGoogleSheets();
+      // Consulta automática a cada 3.5 segundos
+      pollingTimer = setInterval(() => {
+        syncFromGoogleSheets();
+      }, 3500);
+    }
+
+    // Consulta de dados com suporte duplo (fetch direto + fallback para JSONP)
+    function syncFromGoogleSheets(isManual = false) {
+      if (!sheetsUrl || !sheetsUrl.startsWith('http')) {
+        updateStatusBadge(false, "Planilha Não Conectada");
+        return;
+      }
+
+      // Adiciona timestamp para evitar cache do navegador
+      const endpoint = `${sheetsUrl}${sheetsUrl.includes('?') ? '&' : '?'}action=getData&t=${Date.now()}`;
+
+      fetch(endpoint)
+        .then(res => res.json())
+        .then(data => {
+          handleDataReceived(data, isManual);
+        })
+        .catch(err => {
+          // Se o fetch falhar por restrição de iframe/CORS no Google Sites, usamos JSONP dinâmico:
+          fetchViaJsonp(endpoint, isManual);
+        });
+    }
+
+    function fetchViaJsonp(url, isManual = false) {
+      const scriptId = 'jsonp_sync_script';
+      const existing = document.getElementById(scriptId);
+      if (existing) existing.remove();
+
+      window.handleSheetsJsonpCallback = function(data) {
+        handleDataReceived(data, isManual);
+      };
+
+      const script = document.createElement('script');
+      script.id = scriptId;
+      script.src = `${url}&callback=handleSheetsJsonpCallback`;
+      script.onerror = () => {
+        updateStatusBadge(false, "Erro ao Acessar Planilha");
+      };
+      document.body.appendChild(script);
+    }
+
+    function handleDataReceived(data, isManual = false) {
+      if (!data || data.result !== 'success') return;
+      updateStatusBadge(true, "Planilha Conectada");
+
+      // 1. Atualizar Título e Fundo
+      if (data.settings) {
+        if (data.settings.lessonTitle && data.settings.lessonTitle !== lessonTitle) {
+          lessonTitle = data.settings.lessonTitle;
+          document.getElementById('headerLessonTitle').innerText = lessonTitle;
+          document.getElementById('lessonTitleInput').value = lessonTitle;
+          localStorage.setItem(APP_KEYS.TITLE, lessonTitle);
+        }
+        if (data.settings.backgroundDriveUrl !== undefined && data.settings.backgroundDriveUrl !== backgroundDriveUrl) {
+          backgroundDriveUrl = data.settings.backgroundDriveUrl;
+          document.getElementById('driveBgUrl').value = backgroundDriveUrl;
+          applyBackground(backgroundDriveUrl);
+          localStorage.setItem(APP_KEYS.BG_URL, backgroundDriveUrl);
+        }
+      }
+
+      // 2. Atualizar Questões
+      if (data.questions && Array.isArray(data.questions)) {
+        const questionsJson = JSON.stringify(data.questions);
+        const currentJson = JSON.stringify(questions);
+
+        if (questionsJson !== currentJson) {
+          questions = data.questions;
+          localStorage.setItem(APP_KEYS.QS, questionsJson);
+
+          // Avisar aluno se nova questão foi liberada
+          const currentVisibles = questions.filter(q => q.visible).length;
+          if (lastVisibleQuestionCount !== -1 && currentVisibles > lastVisibleQuestionCount) {
+            toast("📢 Nova pergunta liberada pelo professor!");
+          }
+          lastVisibleQuestionCount = currentVisibles;
+
+          renderQuestionsList();
+          renderQuizArea();
+        }
+      }
+
+      if (isManual) toast("Sincronizado com a Planilha Google!");
+    }
+
+    // Gravação na Planilha Google
+    function postToGoogleSheets(payload, onSuccessMsg) {
+      if (!sheetsUrl) {
+        toast("Configure a URL do Google Apps Script no Painel!", true);
+        return;
+      }
+
+      fetch(sheetsUrl, {
+        method: 'POST',
+        mode: 'no-cors', // Envia sem bloqueio de CORS
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }).then(() => {
+        if (onSuccessMsg) toast(onSuccessMsg);
+        // Força uma sincronização 1 segundo depois
+        setTimeout(() => syncFromGoogleSheets(), 1000);
+      }).catch(err => {
+        console.error("Erro ao enviar para Google Sheets:", err);
+        toast("Erro ao comunicar com a Planilha Google", true);
+      });
+    }
+
+    function saveSheetsUrl() {
+      const input = document.getElementById('sheetsAppUrlInput').value.trim();
+      if (!input || !input.startsWith('http')) {
+        return toast("URL inválida! Deve começar com https://script.google.com/...", true);
+      }
+      sheetsUrl = input;
+      localStorage.setItem(APP_KEYS.SHEETS_URL, sheetsUrl);
+      toast("URL da Planilha salva! Sincronizando...");
+      startSmartPolling();
+    }
+
+    function updateStatusBadge(isConnected = null, text = null) {
+      const badge = document.getElementById('badgeConnection');
+      const dot = document.getElementById('sheetsIndicatorDot');
+
+      if (isConnected === true || (isConnected === null && sheetsUrl)) {
+        badge.className = "hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-950/60 text-emerald-400 border border-emerald-500/30";
+        badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse mr-1"></span> Google Sheets (Ao Vivo)`;
+        if (dot) dot.className = "w-3 h-3 rounded-full bg-emerald-400 animate-pulse";
+      } else {
+        badge.className = "hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-950/60 text-amber-400 border border-amber-500/30";
+        badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-amber-400 mr-1"></span> ${text || 'Desconectado'}`;
+        if (dot) dot.className = "w-3 h-3 rounded-full bg-amber-400";
+      }
+    }
+
+    // =========================================================================
+    // 4. FEEDBACK VISUAL & ESTILOS
+    // =========================================================================
+    function applyBackground(url) {
+      const bgDiv = document.getElementById('app-bg');
+      if (!url) {
+        bgDiv.style.backgroundImage = 'none';
+        return;
+      }
+      const driveRegex = /\/file\/d\/([a-zA-Z0-9_-]+)/;
+      const match = url.match(driveRegex);
+      let finalUrl = url;
+      if (match && match[1]) {
+        finalUrl = `https://drive.google.com/uc?export=view&id=${match[1]}`;
+      }
+      bgDiv.style.backgroundImage = `url('${finalUrl}')`;
+    }
+
+    function toast(msg, isError = false) {
+      const t = document.getElementById('toast');
+      const icon = document.getElementById('toastIcon');
+      
+      if (isError) {
+        icon.className = 'fa-solid fa-triangle-exclamation text-rose-400 text-lg';
+        t.classList.replace('border-slate-700', 'border-rose-900/80');
+        t.style.backgroundColor = '#4c1d95';
+      } else {
+        icon.className = 'fa-solid fa-circle-check text-emerald-400 text-lg';
+        t.classList.replace('border-rose-900/80', 'border-slate-700');
+        t.style.backgroundColor = '#1e293b';
+      }
+      
+      document.getElementById('toastMsg').innerText = msg;
+      t.classList.remove('translate-y-24', 'opacity-0');
+      setTimeout(() => t.classList.add('translate-y-24', 'opacity-0'), 3200);
+    }
+
+    // =========================================================================
+    // 5. AUTENTICAÇÃO E NAVEGAÇÃO
+    // =========================================================================
+    function switchTab(tab) {
+      if ((tab === 'perguntas' || tab === 'respostas') && !isAdminAuthenticated) {
+        pendingTab = tab;
+        document.getElementById('authModal').classList.remove('hidden');
+        setTimeout(() => document.getElementById('adminPassword').focus(), 100);
+        return;
+      }
+      forceSwitchTab(tab);
+    }
+
+    function verifyPassword() {
+      const input = document.getElementById('adminPassword').value;
+      if (input === adminPwd) {
+        isAdminAuthenticated = true;
+        document.getElementById('authModal').classList.add('hidden');
+        document.getElementById('adminPassword').value = '';
+        
+        document.getElementById('icon-lock-perguntas').className = 'fa-solid fa-gear text-indigo-400';
+        document.getElementById('icon-lock-respostas').className = 'fa-solid fa-table text-emerald-400';
+        
+        toast('Autenticado com sucesso!');
+        if(pendingTab) forceSwitchTab(pendingTab);
+      } else {
+        toast('Senha incorreta!', true);
+      }
+    }
+
+    function cancelAuth() {
+      document.getElementById('authModal').classList.add('hidden');
+      document.getElementById('adminPassword').value = '';
+      pendingTab = null;
+    }
+
+    function forceSwitchTab(tab) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+      document.querySelectorAll('nav button').forEach(btn => {
+        btn.classList.remove('bg-indigo-600', 'text-white', 'shadow');
+        btn.classList.add('text-slate-400', 'hover:bg-slate-800');
+      });
+      
+      document.getElementById(`tab-${tab}`).classList.remove('hidden');
+      const activeBtn = document.getElementById(`tabBtn-${tab}`);
+      activeBtn.classList.add('bg-indigo-600', 'text-white', 'shadow');
+      activeBtn.classList.remove('text-slate-400', 'hover:bg-slate-800');
+      
+      if (tab === 'responder') renderQuizArea();
+      if (tab === 'respostas') fetchResponsesFromSheets();
+    }
+
+    // =========================================================================
+    // 6. SALVAMENTO DE CONFIGURAÇÕES (ADMIN)
+    // =========================================================================
+    function saveSettings(type) {
+      if (type === 'title') {
+        lessonTitle = document.getElementById('lessonTitleInput').value.trim() || 'Aula Interativa';
+        localStorage.setItem(APP_KEYS.TITLE, lessonTitle);
+        document.getElementById('headerLessonTitle').innerText = lessonTitle;
+        postToGoogleSheets({ action: 'saveSettings', settings: { lessonTitle } }, 'Título salvo na Planilha!');
+      } else if (type === 'password') {
+        const inputVal = document.getElementById('newAdminPassword').value.trim();
+        if (!inputVal) return toast('Digite uma senha válida!', true);
+        adminPwd = inputVal;
+        localStorage.setItem(APP_KEYS.PWD, adminPwd);
+        document.getElementById('newAdminPassword').value = '';
+        toast('Senha alterada!');
+      } else if (type === 'background') {
+        backgroundDriveUrl = document.getElementById('driveBgUrl').value.trim();
+        localStorage.setItem(APP_KEYS.BG_URL, backgroundDriveUrl);
+        applyBackground(backgroundDriveUrl);
+        postToGoogleSheets({ action: 'saveSettings', settings: { backgroundDriveUrl } }, 'Fundo salvo na Planilha!');
+      }
+    }
+
+    function openScriptModal() { document.getElementById('scriptModal').classList.remove('hidden'); }
+    function closeScriptModal() { document.getElementById('scriptModal').classList.add('hidden'); }
+    function copyScriptCode() {
+      const code = document.getElementById('scriptCodeText').innerText;
+      navigator.clipboard.writeText(code).then(() => toast('Código copiado para a área de transferência!'));
+    }
+
+    // =========================================================================
+    // 7. GERENCIAMENTO DE PERGUNTAS (TRANSMISSÃO PARA A PLANILHA)
+    // =========================================================================
+    function syncQuestionsToSheets() {
+      localStorage.setItem(APP_KEYS.QS, JSON.stringify(questions));
+      postToGoogleSheets({ action: 'saveQuestions', questions: questions }, 'Perguntas salvas na Planilha Google!');
+    }
+
+    function renderQuestionsList() {
+      const list = document.getElementById('questionsList');
+      if (!list) return;
+      list.innerHTML = '';
+      
+      if(questions.length === 0) {
+        list.innerHTML = '<div class="text-center py-8 text-slate-500 border border-dashed border-slate-700 rounded-xl">Sem questões cadastradas.</div>';
+        return;
+      }
+
+      questions.forEach((q, i) => {
+        const isVis = q.visible;
+        const renderOption = (letter, text) => {
+           const isCorrect = q.correct === letter;
+           return `<div class="bg-slate-950/50 p-2 rounded border ${isCorrect ? 'border-emerald-500/50 bg-emerald-900/20 text-emerald-300' : 'border-slate-700/50 text-slate-300'}">
+                     <strong class="${isCorrect ? 'text-emerald-400' : 'text-indigo-400'} mr-1">${letter}:</strong> ${text}
+                     ${isCorrect ? '<i class="fa-solid fa-check text-[10px] ml-1"></i>' : ''}
+                   </div>`;
+        };
+
+        list.innerHTML += `
+          <div class="p-5 rounded-2xl border transition-all ${isVis ? 'bg-slate-800/80 border-indigo-500/30' : 'bg-slate-900 border-slate-800 opacity-70'}">
+            <div class="flex flex-col md:flex-row justify-between items-start gap-4">
+              <div class="space-y-2 flex-1 w-full">
+                <div class="flex items-center justify-between sm:justify-start space-x-3">
+                  <span class="text-[10px] font-bold px-2 py-0.5 rounded tracking-wider ${isVis ? 'bg-indigo-900/60 text-indigo-300 border border-indigo-500/30' : 'bg-slate-800 text-slate-500 border border-slate-600'}">
+                    ${isVis ? '🟢 LIBERADA (Alunos veem)' : '🔴 BLOQUEADA (Oculta)'}
+                  </span>
+                  <span class="text-xs font-bold text-slate-500">QUESTÃO ${i+1}</span>
+                </div>
+                <h3 class="font-bold text-white text-base leading-snug">${q.title}</h3>
+                
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3 text-xs">
+                  ${renderOption('A', q.options.A)} ${renderOption('B', q.options.B)}
+                  ${renderOption('C', q.options.C)} ${renderOption('D', q.options.D)}
+                </div>
+              </div>
+              
+              <div class="flex flex-row md:flex-col items-center gap-2 shrink-0 w-full md:w-auto mt-2 md:mt-0 pt-3 md:pt-0 border-t md:border-t-0 border-slate-700">
+                <button onclick="toggleQ(${q.id})" class="flex-1 md:w-full px-3 py-2 bg-slate-950 hover:bg-slate-700 rounded-lg text-xs font-bold text-white border border-slate-700 transition flex items-center justify-center">
+                  ${isVis ? '<i class="fa-solid fa-eye-slash mr-1 text-amber-400"></i> Ocultar' : '<i class="fa-solid fa-eye mr-1 text-emerald-400"></i> Liberar'}
+                </button>
+                <button onclick="openQuestionModal(${q.id})" class="flex-1 md:w-full px-3 py-2 bg-indigo-900/30 hover:bg-indigo-900/50 text-indigo-300 border border-indigo-700/50 rounded-lg text-xs font-bold transition flex items-center justify-center"><i class="fa-solid fa-pen mr-1"></i> Editar</button>
+                <button onclick="deleteQ(${q.id})" class="w-10 md:w-full py-2 bg-rose-900/30 hover:bg-rose-900/50 text-rose-400 border border-rose-700/50 rounded-lg text-xs transition flex items-center justify-center"><i class="fa-solid fa-trash-can"></i></button>
+              </div>
+            </div>
+          </div>
+        `;
+      });
+    }
+
+    function toggleQ(id) { 
+      let q = questions.find(x => x.id === id); 
+      if (!q) return;
+      q.visible = !q.visible; 
+      renderQuestionsList();
+      syncQuestionsToSheets();
+      toast(q.visible ? 'Liberada na planilha!' : 'Bloqueada na planilha!'); 
+    }
+
+    function setAllQuestionsStatus(status) { 
+      questions.forEach(q => q.visible = status); 
+      renderQuestionsList();
+      syncQuestionsToSheets();
+      toast(status ? 'Todas liberadas na planilha!' : 'Todas bloqueadas na planilha!'); 
+    }
+
+    function deleteQ(id) { 
+      if(confirm('Apagar esta questão permanentemente da Planilha Google?')) { 
+        questions = questions.filter(x => x.id !== id); 
+        renderQuestionsList();
+        syncQuestionsToSheets();
+        toast('Questão removida.'); 
+      } 
+    }
+
+    function openQuestionModal(id = null) {
+      editId = id;
+      document.getElementById('questionModal').classList.remove('hidden');
+      if (id) {
+        let q = questions.find(x => x.id === id);
+        document.getElementById('modalTitle').innerText = 'Editar Questão';
+        document.getElementById('modalQuestionText').value = q.title;
+        document.getElementById('modalOptA').value = q.options.A;
+        document.getElementById('modalOptB').value = q.options.B;
+        document.getElementById('modalOptC').value = q.options.C;
+        document.getElementById('modalOptD').value = q.options.D;
+        document.getElementById('modalCorrectOption').value = q.correct || 'A';
+      } else {
+        document.getElementById('modalTitle').innerText = 'Nova Questão';
+        document.querySelectorAll('#questionModal input[type="text"], #questionModal textarea').forEach(i => i.value = '');
+        document.getElementById('modalCorrectOption').value = 'A';
+      }
+    }
+    
+    function closeQuestionModal() { document.getElementById('questionModal').classList.add('hidden'); }
+    
+    function saveQuestion() {
+      let title = document.getElementById('modalQuestionText').value.trim();
+      let opts = {
+        A: document.getElementById('modalOptA').value.trim(), B: document.getElementById('modalOptB').value.trim(),
+        C: document.getElementById('modalOptC').value.trim(), D: document.getElementById('modalOptD').value.trim()
+      };
+      let correct = document.getElementById('modalCorrectOption').value;
+      
+      if(!title || !opts.A || !opts.B || !opts.C || !opts.D) return toast('Preencha as opções e enunciado!', true);
+      
+      if (editId) {
+        let q = questions.find(x => x.id === editId);
+        q.title = title; q.options = opts; q.correct = correct;
+        toast('Questão atualizada!');
+      } else {
+        questions.push({ id: Date.now(), title, visible: true, options: opts, correct });
+        toast('Questão criada!');
+      }
+      
+      renderQuestionsList();
+      closeQuestionModal(); 
+      syncQuestionsToSheets();
+    }
+
+    // =========================================================================
+    // 8. FLUXO DO ALUNO (RESPONDER)
+    // =========================================================================
+    function renderQuizArea() {
+      let vQs = questions.filter(q => q.visible);
+      
+      if(vQs.length === 0) {
+        document.getElementById('noQuestionsNotice').classList.remove('hidden');
+        document.getElementById('activeQuizArea').classList.add('hidden');
+        document.getElementById('quizFinishedArea').classList.add('hidden');
+        return;
+      }
+      
+      document.getElementById('noQuestionsNotice').classList.add('hidden');
+      
+      if (!document.getElementById('quizFinishedArea').classList.contains('hidden')) {
+        return;
+      }
+
+      document.getElementById('activeQuizArea').classList.remove('hidden');
+      
+      if (activeIndex >= vQs.length) activeIndex = Math.max(0, vQs.length - 1);
+      let q = vQs[activeIndex];
+      
+      document.getElementById('quizProgressText').innerText = `Questão ${activeIndex + 1} de ${vQs.length}`;
+      document.getElementById('progressBar').style.width = `${((activeIndex + 1) / vQs.length) * 100}%`;
+      document.getElementById('quizQuestionText').innerText = q.title;
+      
+      let optsHtml = '';
+      ['A','B','C','D'].forEach(l => {
+        let sel = selectedAnswers[q.id] === l;
+        optsHtml += `
+          <button onclick="selOpt(${q.id}, '${l}')" class="w-full text-left p-4 rounded-xl border-2 flex items-center space-x-4 transition-all transform hover:-translate-y-0.5 ${sel ? 'bg-indigo-600/30 border-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.2)]' : 'bg-slate-900 border-slate-700 hover:border-slate-500'}">
+            <span class="w-8 h-8 shrink-0 rounded-lg flex items-center justify-center text-sm font-bold ${sel ? 'bg-indigo-500 text-white shadow-lg' : 'bg-slate-800 text-slate-400'}">${l}</span>
+            <span class="text-[15px] ${sel ? 'text-white font-bold' : 'text-slate-300'}">${q.options[l]}</span>
+          </button>
+        `;
+      });
+      document.getElementById('optionsContainer').innerHTML = optsHtml;
+      
+      document.getElementById('prevBtn').disabled = activeIndex === 0;
+      
+      const nextBtn = document.getElementById('nextBtn');
+      if (activeIndex === vQs.length - 1) {
+        nextBtn.innerHTML = `Concluir <i class="fa-solid fa-flag-checkered ml-2"></i>`;
+        nextBtn.className = "px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-sm font-bold transition shadow-lg flex items-center shadow-emerald-500/30";
+      } else {
+        nextBtn.innerHTML = `Próxima <i class="fa-solid fa-arrow-right ml-2"></i>`;
+        nextBtn.className = "px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-bold transition shadow-lg flex items-center shadow-indigo-500/30";
+      }
+    }
+
+    function selOpt(qid, l) { 
+      selectedAnswers[qid] = l; 
+      renderQuizArea(); 
+    }
+
+    function prevQuestion() { 
+      if(activeIndex > 0) { 
+        activeIndex--; 
+        renderQuizArea(); 
+      } 
+    }
+    
+    function nextQuestion() {
+      let vQs = questions.filter(q => q.visible);
+      let currentQ = vQs[activeIndex];
+      
+      if (!selectedAnswers[currentQ.id]) return toast('Selecione uma alternativa antes de avançar!', true);
+
+      if(activeIndex < vQs.length - 1) { 
+        activeIndex++; 
+        renderQuizArea(); 
+      } else {
+        document.getElementById('activeQuizArea').classList.add('hidden');
+        document.getElementById('quizFinishedArea').classList.remove('hidden');
+      }
+    }
+
+    function submitAnswers() {
+      let fname = document.getElementById('studentFirstName').value.trim();
+      let lname = document.getElementById('studentLastName').value.trim();
+      
+      if(!fname || !lname) {
+        toast('Por favor, preencha seu Nome e Sobrenome no topo!', true);
+        document.getElementById('studentFirstName').focus();
+        return;
+      }
+
+      const btnSubmit = document.getElementById('btnSubmitFinal');
+      btnSubmit.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin mr-2"></i> Gravando na Planilha...`;
+      btnSubmit.disabled = true;
+
+      let vQs = questions.filter(q => q.visible);
+      let score = 0;
+      let ansLog = {};
+      
+      vQs.forEach(q => {
+        const studentAns = selectedAnswers[q.id] || '-';
+        ansLog[q.id] = studentAns;
+        if (studentAns === q.correct) score++;
+      });
+
+      const payload = { 
+        action: 'submitResponse',
+        date: new Date().toLocaleString('pt-BR'), 
+        nome: fname, 
+        sobrenome: lname,
+        acertos: `${score}/${vQs.length}`,
+        respostas: ansLog 
+      };
+
+      // Gravação na Planilha
+      postToGoogleSheets(payload);
+
+      // Salva cópia local
+      responses.push(payload);
+      localStorage.setItem(APP_KEYS.RES, JSON.stringify(responses));
+
+      setTimeout(() => {
+        toast('Avaliação registrada com sucesso na Planilha Google!');
+        selectedAnswers = {}; 
+        activeIndex = 0;
+        document.getElementById('studentFirstName').value = '';
+        document.getElementById('studentLastName').value = '';
+        
+        btnSubmit.innerHTML = `<i class="fa-solid fa-paper-plane mr-2"></i> Enviar Avaliação`;
+        btnSubmit.disabled = false;
+
+        document.getElementById('quizFinishedArea').classList.add('hidden');
+        renderQuizArea(); 
+        window.scrollTo(0,0);
+      }, 1200);
+    }
+
+    // =========================================================================
+    // 9. DADOS E PLANILHA (ADMIN)
+    // =========================================================================
+    function fetchResponsesFromSheets() {
+      if (!sheetsUrl) return renderResponsesTable();
+
+      const endpoint = `${sheetsUrl}${sheetsUrl.includes('?') ? '&' : '?'}action=getResponses&t=${Date.now()}`;
+      
+      fetch(endpoint)
+        .then(res => res.json())
+        .then(data => {
+          if (data && data.responses) {
+            responses = data.responses;
+            localStorage.setItem(APP_KEYS.RES, JSON.stringify(responses));
+            renderResponsesTable();
+            toast("Respostas atualizadas da Planilha!");
+          }
+        })
+        .catch(() => {
+          renderResponsesTable();
+        });
+    }
+
+    function renderResponsesTable() {
+      let head = document.getElementById('tableHeader');
+      let body = document.getElementById('tableBody');
+      if (!head || !body) return;
+      
+      let theadHtml = `
+        <th class="p-3 text-left w-32 border-r border-slate-700">Data</th>
+        <th class="p-3 text-left border-r border-slate-700">Nome</th>
+        <th class="p-3 text-left border-r border-slate-700">Sobrenome</th>
+        <th class="p-3 text-center border-r border-slate-700 text-emerald-400"><i class="fa-solid fa-bullseye"></i> Acertos</th>
+      `;
+      questions.forEach((q,i) => theadHtml += `<th class="p-3 text-center" title="Correta: ${q.correct || '?'}">Q${i+1}</th>`);
+      head.innerHTML = theadHtml;
+      
+      body.innerHTML = '';
+      if(responses.length === 0) {
+        body.innerHTML = `<tr><td colspan="${questions.length+4}" class="p-8 text-center text-slate-500 italic">Nenhuma resposta registrada na planilha ainda.</td></tr>`;
+        return;
+      }
+      
+      [...responses].reverse().forEach(r => {
+        let tr = `
+          <tr class="hover:bg-slate-800/50 transition-colors">
+            <td class="p-3 text-[11px] font-mono text-slate-400 border-r border-slate-700/50">${r.date}</td>
+            <td class="p-3 font-bold text-white border-r border-slate-700/50">${r.nome}</td>
+            <td class="p-3 font-bold text-white border-r border-slate-700/50">${r.sobrenome}</td>
+            <td class="p-3 text-center font-black text-emerald-400 bg-emerald-950/20 border-r border-slate-700/50">${r.acertos || '-'}</td>
+        `;
+        
+        questions.forEach(q => {
+          let a = r.respostas ? r.respostas[q.id] : '-';
+          let isCorrect = a === q.correct;
+          let badge = '';
+          if (a && a !== '-') {
+            badge = isCorrect ? 'bg-emerald-600 text-white' : 'bg-rose-900/80 text-rose-300 border border-rose-700/50';
+          } else {
+            badge = 'bg-slate-800 text-slate-600';
+          }
+          tr += `<td class="p-3 text-center"><span class="inline-flex items-center justify-center w-7 h-7 rounded text-xs font-bold ${badge}">${a || '-'}</span></td>`;
+        });
+        tr += `</tr>`;
+        body.innerHTML += tr;
+      });
+    }
+
+    function clearResponses() {
+      if(confirm('Tem certeza? Isso apagará as respostas da aba "Respostas" na Planilha Google.')) { 
+        responses = []; 
+        localStorage.setItem(APP_KEYS.RES, '[]'); 
+        postToGoogleSheets({ action: 'clearResponses' }, 'Aba de respostas limpa na planilha!');
+        renderResponsesTable(); 
+      }
+    }
+    
+    function exportCSV() {
+      if (responses.length === 0) return toast('Planilha Vazia!', true);
+
+      let csv = "Data,Nome,Sobrenome,Acertos," + questions.map((q,i) => `Questao_${i+1}`).join(",") + "\n";
+      
+      responses.forEach(r => {
+        let safeF = (r.nome || '').replace(/,/g, " ");
+        let safeL = (r.sobrenome || '').replace(/,/g, " ");
+        csv += `"${r.date}","${safeF}","${safeL}","${r.acertos}",` + questions.map(q => `"${(r.respostas && r.respostas[q.id]) || '-'}"`).join(",") + "\n";
+      });
+      
+      const blob = new Blob(["\uFEFF" + csv], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `Resultados_${lessonTitle.replace(/ /g,"_")}.csv`; 
+      link.click();
+      URL.revokeObjectURL(link.href);
+    }
+  </script>
+</body>
+</html>
